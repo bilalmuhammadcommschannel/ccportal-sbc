@@ -335,40 +335,51 @@ nft -f /etc/nftables.conf || warn "nftables load reported an error — review /e
 ok "configs installed"
 
 # ---------------------------------------------------------------- TLS
-# Ordering matters (H1): the nginx vhosts reference the cert, so a cert file MUST
-# exist before nginx can start; and certbot --webroot needs nginx already serving
-# :80. So: (1) drop a self-signed placeholder if no cert yet, (2) start nginx,
-# (3) run certbot with nginx up, (4) reload on success.
+# Certs live at a STABLE path (/etc/ssl/ccportal) that nginx + kamailio read.
+# Deliberately NOT /etc/letsencrypt/live/$DOMAIN: a self-signed placeholder there
+# makes certbot refuse to issue ("live directory exists for ..."). So we place a
+# placeholder in our own dir, start nginx, let certbot issue into ITS dir, then
+# copy the real cert out to the stable path.
 step "preparing TLS for $DOMAIN"
-mkdir -p /var/www/html
-if [ ! -s "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-    mkdir -p "/etc/letsencrypt/live/$DOMAIN"
-    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 90 \
-        -keyout "/etc/letsencrypt/live/$DOMAIN/privkey.pem" -out "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" \
-        -subj "/CN=$DOMAIN" >/dev/null 2>&1
-    cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "/etc/letsencrypt/live/$DOMAIN/chain.pem"
+mkdir -p /var/www/html /etc/ssl/ccportal /etc/kamailio/tls
+LIVE="/etc/letsencrypt/live/$DOMAIN"
+put_certs() {   # publish fullchain, privkey, chain to the stable paths nginx+kamailio use
+    cp "$1" /etc/ssl/ccportal/fullchain.pem; cp "$2" /etc/ssl/ccportal/privkey.pem; cp "${3:-$1}" /etc/ssl/ccportal/chain.pem
+    cp "$1" /etc/kamailio/tls/fullchain.pem; cp "$2" /etc/kamailio/tls/privkey.pem
+    chmod 0644 /etc/ssl/ccportal/fullchain.pem /etc/ssl/ccportal/chain.pem; chmod 0640 /etc/ssl/ccportal/privkey.pem /etc/kamailio/tls/privkey.pem
+    chown -R kamailio:kamailio /etc/kamailio/tls 2>/dev/null || true
+}
+# self-signed placeholder (our dir, never certbot's) so nginx can start
+if [ ! -s /etc/ssl/ccportal/fullchain.pem ]; then
+    tmpk="$(mktemp)"; tmpc="$(mktemp)"
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 90 -keyout "$tmpk" -out "$tmpc" -subj "/CN=$DOMAIN" >/dev/null 2>&1
+    put_certs "$tmpc" "$tmpk" "$tmpc"; rm -f "$tmpk" "$tmpc"
 fi
-# now nginx can validate + start (vhosts enabled earlier)
 nginx -t && { systemctl enable nginx >/dev/null 2>&1 || true; systemctl restart nginx; } || warn "nginx config test failed — review 'nginx -t'"
-# a real ACME cert is marked by a renewal conf; only then skip re-issuance
-if [ -f "/etc/letsencrypt/renewal/$DOMAIN.conf" ]; then
-    ok "Lets Encrypt cert already issued — keeping it"
-elif certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --email "$LE_EMAIL" --agree-tos --non-interactive >/dev/null 2>&1; then
-    systemctl reload nginx || true
-    ok "Lets Encrypt cert issued"
-else
-    warn "certbot could not issue yet (is DNS for $DOMAIN pointed at $PUBLIC_IP?). Serving a self-signed cert for now — re-run this installer once DNS resolves to get a real one."
+# issue a real cert unless one already exists (renewal conf = certbot-managed lineage)
+if [ ! -f "/etc/letsencrypt/renewal/$DOMAIN.conf" ]; then
+    RES="$(getent hosts "$DOMAIN" | awk '{print $1}' | head -1)"
+    [ "$RES" = "$PUBLIC_IP" ] || warn "heads-up: $DOMAIN resolves to '${RES:-nothing}', not $PUBLIC_IP — if issuance fails it's DNS propagation; re-run in a few minutes."
+    certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --email "$LE_EMAIL" --agree-tos --non-interactive \
+        || warn "certbot could not issue yet (see output above); keeping the self-signed cert for now."
 fi
-# Kamailio TLS copy + renewal hook
-mkdir -p /etc/kamailio/tls
-cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" /etc/kamailio/tls/fullchain.pem
-cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem"   /etc/kamailio/tls/privkey.pem
-chown -R kamailio:kamailio /etc/kamailio/tls 2>/dev/null || true
+# publish whatever certbot produced (this run or a prior one) to the stable paths
+if [ -s "$LIVE/fullchain.pem" ]; then
+    put_certs "$LIVE/fullchain.pem" "$LIVE/privkey.pem" "$LIVE/chain.pem"
+    systemctl reload nginx 2>/dev/null || true; systemctl restart kamailio 2>/dev/null || true
+    ok "TLS cert in place (Let's Encrypt)"
+else
+    ok "TLS using self-signed placeholder — re-run once DNS resolves for a real cert"
+fi
+# renewal deploy hook: republish to the stable paths + reload
 install -D -m 0755 /dev/null /etc/letsencrypt/renewal-hooks/deploy/20-cc-reload.sh
 cat > /etc/letsencrypt/renewal-hooks/deploy/20-cc-reload.sh <<EOF
 #!/bin/sh
-cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" /etc/kamailio/tls/fullchain.pem
-cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem"   /etc/kamailio/tls/privkey.pem
+cp "$LIVE/fullchain.pem" /etc/ssl/ccportal/fullchain.pem
+cp "$LIVE/privkey.pem"   /etc/ssl/ccportal/privkey.pem
+cp "$LIVE/chain.pem"     /etc/ssl/ccportal/chain.pem 2>/dev/null || cp "$LIVE/fullchain.pem" /etc/ssl/ccportal/chain.pem
+cp "$LIVE/fullchain.pem" /etc/kamailio/tls/fullchain.pem
+cp "$LIVE/privkey.pem"   /etc/kamailio/tls/privkey.pem
 chown -R kamailio:kamailio /etc/kamailio/tls 2>/dev/null || true
 systemctl reload nginx; systemctl restart kamailio
 EOF
