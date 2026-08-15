@@ -28,41 +28,46 @@ die() { c "1;31" "FATAL: $*"; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root (use sudo)."
 
 # ---------------------------------------------------------------- inputs (asked up front)
-DOMAIN="${DOMAIN:-}"; LE_EMAIL="${LE_EMAIL:-}"; SIGNALWIRE_TOKEN="${SIGNALWIRE_TOKEN:-}"; OPEN_SIP="${OPEN_SIP:-}"; GITHUB_PAT="${GITHUB_PAT:-}"
+DOMAIN="${DOMAIN:-}"; LE_EMAIL="${LE_EMAIL:-}"; SIGNALWIRE_TOKEN="${SIGNALWIRE_TOKEN:-}"; OPEN_SIP="${OPEN_SIP:-}"
 while [ $# -gt 0 ]; do case "$1" in
     --domain) DOMAIN="$2"; shift 2;;
     --email) LE_EMAIL="$2"; shift 2;;
     --signalwire-token) SIGNALWIRE_TOKEN="$2"; shift 2;;
-    --github-pat) GITHUB_PAT="$2"; shift 2;;
     --open-sip) OPEN_SIP=yes; shift;;
     *) shift;;
 esac; done
 
+# On a re-run, reuse the domain/email/open-sip choices already saved, so the
+# operator isn't re-prompted after a mid-way failure.
+SAVED="${CRED_DIR}/install-credentials"
+if [ -f "$SAVED" ]; then
+    [ -n "$DOMAIN" ]   || DOMAIN="$(grep -E '^DOMAIN=' "$SAVED" | cut -d= -f2-)"
+    [ -n "$LE_EMAIL" ] || LE_EMAIL="$(grep -E '^LE_EMAIL=' "$SAVED" | cut -d= -f2-)"
+    [ -n "$OPEN_SIP" ] || OPEN_SIP="$(grep -E '^OPEN_SIP=' "$SAVED" | cut -d= -f2-)"
+fi
+
 ask()    { local p="$1" d="${2:-}" v; if [ -n "$d" ]; then read -rp "$p [$d]: " v </dev/tty || true; echo "${v:-$d}"; else read -rp "$p: " v </dev/tty || true; echo "$v"; fi; }
 asksec() { local p="$1" v; read -rsp "$p: " v </dev/tty || true; echo >/dev/tty; echo "$v"; }   # hidden entry for tokens
 
-# Prompt for everything BEFORE cloning, so a re-exec (below) never re-asks.
-[ -n "$GITHUB_PAT" ]       || GITHUB_PAT="$(asksec 'GitHub personal access token (press Enter to skip for a public repo)')"
+# Prompt for anything still unknown, BEFORE cloning, so the re-exec never re-asks.
 [ -n "$DOMAIN" ]           || DOMAIN="$(ask 'SIP + portal domain (e.g. sbc.example.com)')"
 [ -n "$LE_EMAIL" ]         || LE_EMAIL="$(ask 'Email for Lets Encrypt / expiry notices')"
-[ -n "$SIGNALWIRE_TOKEN" ] || SIGNALWIRE_TOKEN="$(asksec 'SignalWire token (free from signalwire.com; for the FreeSWITCH repo)')"
+[ -n "$SIGNALWIRE_TOKEN" ] || SIGNALWIRE_TOKEN="$(asksec 'SignalWire access token (free from signalwire.com; for the FreeSWITCH repo)')"
 if [ -z "$OPEN_SIP" ]; then a="$(ask 'Open SIP (5060/5061/RTP) to the public internet now? y/N' 'N')"; [ "${a,,}" = y ] && OPEN_SIP=yes || OPEN_SIP=no; fi
 [ -n "$DOMAIN" ] || die "domain is required."
 [ -n "$SIGNALWIRE_TOKEN" ] || die "SignalWire token is required for FreeSWITCH."
-export DOMAIN LE_EMAIL SIGNALWIRE_TOKEN OPEN_SIP GITHUB_PAT
+export DOMAIN LE_EMAIL SIGNALWIRE_TOKEN OPEN_SIP
 
 # ---------------------------------------------------------------- self-bootstrap
 # First run is usually just this one file (fetched via `curl -O`); the rest of
-# the repo isn't on disk yet. Clone it — with the PAT if one was given, so a
-# private repo works too — then re-exec. Inputs are exported, so no re-prompt.
+# the repo isn't on disk yet. Clone it, then re-exec. Inputs are exported, so
+# the re-exec never re-prompts. Re-running after a failure just `git pull`s.
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 if [ -z "${SELF_DIR}" ] || [ ! -d "${SELF_DIR}/server" ]; then
     step "fetching installer repo -> ${CLONE_DIR}"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq && apt-get install -y -qq git >/dev/null
-    CLONE_URL="${REPO_URL}"
-    [ -n "${GITHUB_PAT}" ] && CLONE_URL="https://x-access-token:${GITHUB_PAT}@github.com/${REPO_SLUG}.git"
-    if [ -d "${CLONE_DIR}/.git" ]; then git -C "${CLONE_DIR}" pull -q; else git clone -q --depth 1 -b "${BRANCH}" "${CLONE_URL}" "${CLONE_DIR}"; fi
+    if [ -d "${CLONE_DIR}/.git" ]; then git -C "${CLONE_DIR}" pull -q || true; else git clone -q --depth 1 -b "${BRANCH}" "${REPO_URL}" "${CLONE_DIR}"; fi
     exec bash "${CLONE_DIR}/install.sh"
 fi
 REPO="${SELF_DIR}"
@@ -71,16 +76,24 @@ PUBLIC_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | grep -oE 'src [0-9.]+' | awk 
 [ -n "$PUBLIC_IP" ] || PUBLIC_IP="$(hostname -I | awk '{print $1}')"
 step "domain=$DOMAIN  public-ip=$PUBLIC_IP  open-sip=$OPEN_SIP"
 
-# ---------------------------------------------------------------- secrets
-step "generating secrets"
-mkdir -p "$CRED_DIR"; chmod 700 "$CRED_DIR"
-gen() { openssl rand -hex "${1:-24}"; }
-APP_DB_PASS="$(gen 18)"; KAM_DB_PASS="$(gen 18)"; SWITCH_SECRET="$(gen 24)"; ESL_PASSWORD="$(gen 20)"
-ADMIN_EMAIL="admin@${DOMAIN}"; ADMIN_PASSWORD="$(gen 12)"
-umask 077
-cat > "$CRED_DIR/install-credentials" <<EOF
-# CommsChannel SBC — generated $(date -u +%FT%TZ). KEEP PRIVATE.
+# ---------------------------------------------------------------- secrets (idempotent)
+step "resolving secrets"
+mkdir -p "$CRED_DIR"; chmod 700 "$CRED_DIR"; umask 077
+gen()  { openssl rand -hex "${1:-24}"; }
+# read a value from the saved credentials file if this is a re-run, else blank
+rc()   { [ -f "$SAVED" ] && grep -E "^$1=" "$SAVED" | head -1 | cut -d= -f2- || true; }
+APP_DB_PASS="$(rc APP_DB_PASS)";      APP_DB_PASS="${APP_DB_PASS:-$(gen 18)}"
+KAM_DB_PASS="$(rc KAM_DB_PASS)";      KAM_DB_PASS="${KAM_DB_PASS:-$(gen 18)}"
+SWITCH_SECRET="$(rc SWITCH_SHARED_SECRET)"; SWITCH_SECRET="${SWITCH_SECRET:-$(gen 24)}"
+ESL_PASSWORD="$(rc ESL_PASSWORD)";    ESL_PASSWORD="${ESL_PASSWORD:-$(gen 20)}"
+ADMIN_PASSWORD="$(rc ADMIN_PASSWORD)";ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(gen 12)}"
+ADMIN_EMAIL="$(rc ADMIN_EMAIL)";      ADMIN_EMAIL="${ADMIN_EMAIL:-admin@${DOMAIN}}"
+APP_KEY="$(rc APP_KEY)";              APP_KEY="${APP_KEY:-base64:$(openssl rand -base64 32)}"
+cat > "$SAVED" <<EOF
+# CommsChannel SBC — first written $(date -u +%FT%TZ). KEEP PRIVATE. Reused on re-run.
 DOMAIN=$DOMAIN
+LE_EMAIL=$LE_EMAIL
+OPEN_SIP=$OPEN_SIP
 PORTAL_URL=https://$DOMAIN
 ADMIN_EMAIL=$ADMIN_EMAIL
 ADMIN_PASSWORD=$ADMIN_PASSWORD
@@ -90,8 +103,9 @@ KAM_DB_USER=kamailio
 KAM_DB_PASS=$KAM_DB_PASS
 SWITCH_SHARED_SECRET=$SWITCH_SECRET
 ESL_PASSWORD=$ESL_PASSWORD
+APP_KEY=$APP_KEY
 EOF
-ok "secrets stored in $CRED_DIR/install-credentials (0600)"
+ok "secrets in $SAVED (0600) — regenerated only if missing"
 
 # ---------------------------------------------------------------- apt repos + packages
 step "configuring apt repositories"
@@ -125,13 +139,17 @@ ok "packages installed"
 step "creating databases + users"
 systemctl enable --now mariadb >/dev/null 2>&1 || true
 mysql() { command mariadb "$@"; }
+# CREATE ... IF NOT EXISTS + ALTER USER keeps this safe to re-run and guarantees
+# the user passwords match the (reused-on-re-run) secrets.
 mysql <<SQL
 CREATE DATABASE IF NOT EXISTS ccportal_app CHARACTER SET utf8mb4;
 CREATE DATABASE IF NOT EXISTS switch;
 CREATE DATABASE IF NOT EXISTS switchcdr;
 CREATE DATABASE IF NOT EXISTS kamailio;
 CREATE USER IF NOT EXISTS 'ccportal'@'localhost' IDENTIFIED BY '${APP_DB_PASS}';
+ALTER  USER 'ccportal'@'localhost' IDENTIFIED BY '${APP_DB_PASS}';
 CREATE USER IF NOT EXISTS 'kamailio'@'localhost' IDENTIFIED BY '${KAM_DB_PASS}';
+ALTER  USER 'kamailio'@'localhost' IDENTIFIED BY '${KAM_DB_PASS}';
 GRANT ALL PRIVILEGES ON ccportal_app.* TO 'ccportal'@'localhost';
 GRANT SELECT,INSERT,UPDATE,DELETE ON switch.* TO 'ccportal'@'localhost';
 GRANT SELECT,INSERT,UPDATE,DELETE ON switchcdr.* TO 'ccportal'@'localhost';
@@ -139,18 +157,24 @@ GRANT ALL PRIVILEGES ON kamailio.* TO 'kamailio'@'localhost';
 GRANT SELECT ON switch.customer_sip_account TO 'kamailio'@'localhost';
 FLUSH PRIVILEGES;
 SQL
-step "loading schema"
+step "loading schema (only into empty databases)"
 render() { sed -e "s|__PUBLIC_IP__|${PUBLIC_IP}|g" -e "s|__DOMAIN__|${DOMAIN}|g" \
                -e "s|__ESL_PASSWORD__|${ESL_PASSWORD}|g" -e "s|__SWITCH_SECRET__|${SWITCH_SECRET}|g" \
                -e "s|__KAM_DB_PASS__|${KAM_DB_PASS}|g"; }
-mysql switch       < "$REPO/database/schema-switch.sql"
-mysql switchcdr    < "$REPO/database/schema-switchcdr.sql"
-mysql ccportal_app < "$REPO/database/schema-ccportal_app.sql"
-mysql switch       < "$REPO/database/seed-currencies.sql" 2>/dev/null || true
-mysql ccportal_app < "$REPO/database/seed-migrations.sql" 2>/dev/null || true
-# kamailio schema carries the subscriber VIEW over switch.customer_sip_account;
-# render __DOMAIN__ into it before load.
-render < "$REPO/database/schema-kamailio.sql" | mysql kamailio
+ntables() { mysql -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$1'"; }
+load_schema() { # db, file, [render]
+    if [ "$(ntables "$1")" -eq 0 ]; then
+        if [ "${3:-}" = render ]; then render < "$2" | mysql "$1"; else mysql "$1" < "$2"; fi
+        ok "loaded schema into $1"
+    else ok "$1 already has tables — skipping (preserves existing data)"; fi
+}
+load_schema switch       "$REPO/database/schema-switch.sql"
+load_schema switchcdr    "$REPO/database/schema-switchcdr.sql"
+load_schema ccportal_app "$REPO/database/schema-ccportal_app.sql"
+load_schema kamailio     "$REPO/database/schema-kamailio.sql" render
+# seeds: only when the target table is empty (avoids duplicate-key on re-run)
+[ "$(mysql -N -e "SELECT COUNT(*) FROM switch.sys_currencies" 2>/dev/null || echo 0)" -eq 0 ] && mysql switch < "$REPO/database/seed-currencies.sql" || true
+[ "$(mysql -N -e "SELECT COUNT(*) FROM ccportal_app.migrations" 2>/dev/null || echo 0)" -eq 0 ] && mysql ccportal_app < "$REPO/database/seed-migrations.sql" || true
 ok "databases ready"
 
 # ---------------------------------------------------------------- portal
@@ -163,6 +187,7 @@ sudo -u www-data HOME=/tmp COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev 
 cat > "$APP_DIR/.env" <<EOF
 APP_NAME="CommsChannel SBC"
 APP_ENV=production
+APP_KEY=${APP_KEY}
 APP_DEBUG=false
 APP_URL=https://${DOMAIN}
 APP_LOCALE=en
@@ -197,7 +222,7 @@ ADMIN_SEED_EMAIL=${ADMIN_EMAIL}
 ADMIN_SEED_PASSWORD=${ADMIN_PASSWORD}
 EOF
 mkdir -p "$APP_DIR"/storage/framework/{cache/data,sessions,views} "$APP_DIR"/storage/logs "$APP_DIR"/bootstrap/cache
-php8.3 artisan key:generate --force -q
+# APP_KEY is set in .env from the persisted secret (stable across re-runs).
 php8.3 artisan db:seed --class=AdminUserSeeder --force -q || warn "admin seed skipped"
 chown -R www-data:www-data "$APP_DIR"
 find "$APP_DIR/storage" "$APP_DIR/bootstrap/cache" -type d -exec chmod 775 {} \; 2>/dev/null || true
@@ -240,10 +265,12 @@ ok "configs installed"
 step "obtaining TLS certificate for $DOMAIN"
 mkdir -p /var/www/html
 systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
-if certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --email "$LE_EMAIL" --agree-tos --non-interactive >/dev/null 2>&1; then
-    ok "Lets Encrypt cert issued"
+if certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --email "$LE_EMAIL" --agree-tos --non-interactive --keep-until-expiring >/dev/null 2>&1; then
+    ok "Lets Encrypt cert in place"
+elif [ -s "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    ok "existing cert kept (certbot could not renew right now)"
 else
-    warn "certbot failed (DNS for $DOMAIN must point at $PUBLIC_IP). Generating a self-signed cert so services start; re-run certbot once DNS is live."
+    warn "certbot failed (DNS for $DOMAIN must point at $PUBLIC_IP). Generating a self-signed cert so services start; re-run this installer once DNS is live to get a real one."
     mkdir -p "/etc/letsencrypt/live/$DOMAIN"
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 90 \
         -keyout "/etc/letsencrypt/live/$DOMAIN/privkey.pem" -out "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" \

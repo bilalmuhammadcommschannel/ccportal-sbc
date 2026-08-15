@@ -20,19 +20,20 @@ It prompts for everything it needs, up front:
 
 | Prompt | What it is |
 |---|---|
-| **GitHub token** | Personal access token to clone the repo. Press Enter to skip while the repo is public. |
 | **Domain** | FQDN for the portal + SIP realm (e.g. `sbc.example.com`). Point its DNS `A` record at the server first. |
 | **Email** | For the Let's Encrypt certificate + expiry notices. |
 | **SignalWire token** | Free personal access token from [signalwire.com](https://signalwire.com) — FreeSWITCH 1.11 packages are gated behind it. |
 | **Open SIP now?** | Whether to open 5060/5061/RTP to the public internet immediately (default: no — SIP stays restricted to trusted carrier/admin IPs until you're ready). |
 
-Tokens are entered hidden (not echoed). Non-interactive / unattended:
+The SignalWire token is entered hidden (not echoed). Non-interactive / unattended:
 
 ```bash
 curl -O https://raw.githubusercontent.com/bilalmuhammadcommschannel/ccportal-sbc/main/install.sh
 bash install.sh --domain sbc.example.com --email you@example.com \
-  --signalwire-token pt_XXXX --github-pat ghp_XXXX --open-sip
+  --signalwire-token pt_XXXX --open-sip
 ```
+
+**Safe to re-run.** If the install fails partway (a network blip, a bad token, DNS not ready), just run `bash install.sh` again on the same machine. It reuses the secrets it already generated (`/root/.cc/install-credentials`), skips databases that are already loaded, keeps an existing certificate, and only redoes what's missing — so it converges instead of starting over.
 
 ## What it does
 
