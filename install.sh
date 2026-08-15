@@ -358,8 +358,10 @@ fi
 nginx -t && { systemctl enable nginx >/dev/null 2>&1 || true; systemctl restart nginx; } || warn "nginx config test failed — review 'nginx -t'"
 # issue a real cert unless one already exists (renewal conf = certbot-managed lineage)
 if [ ! -f "/etc/letsencrypt/renewal/$DOMAIN.conf" ]; then
-    RES="$(getent hosts "$DOMAIN" | awk '{print $1}' | head -1)"
-    [ "$RES" = "$PUBLIC_IP" ] || warn "heads-up: $DOMAIN resolves to '${RES:-nothing}', not $PUBLIC_IP — if issuance fails it's DNS propagation; re-run in a few minutes."
+    # Resolve via the system resolver but SKIP the Debian /etc/hosts line that maps
+    # the FQDN to 127.0.1.1 (that entry would falsely look like a DNS mismatch).
+    RES="$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk '$1!="127.0.1.1"{print $1; exit}')"
+    [ -z "$RES" ] || [ "$RES" = "$PUBLIC_IP" ] || warn "heads-up: $DOMAIN resolves to '$RES', not $PUBLIC_IP — if issuance fails it's DNS; re-run in a few minutes."
     certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --email "$LE_EMAIL" --agree-tos --non-interactive \
         || warn "certbot could not issue yet (see output above); keeping the self-signed cert for now."
 fi
