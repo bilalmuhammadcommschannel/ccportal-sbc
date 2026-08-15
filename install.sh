@@ -152,7 +152,7 @@ apt-get install -y \
     nginx mariadb-server \
     php8.3-fpm php8.3-cli php8.3-mysql php8.3-mbstring php8.3-xml php8.3-curl php8.3-bcmath php8.3-zip php8.3-intl php8.3-gd \
     kamailio kamailio-mysql-modules kamailio-tls-modules \
-    freeswitch-meta-all freeswitch-config-vanilla \
+    freeswitch-meta-all freeswitch-conf-vanilla \
     certbot fail2ban nftables composer jq || die "package install failed — see apt output above."
 # our FreeSWITCH overlay references vanilla macros ($${domain}, loopback.auto, etc.) —
 # the base config must be present or FreeSWITCH won't parse its XML at all.
