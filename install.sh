@@ -66,7 +66,12 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 if [ -z "${SELF_DIR}" ] || [ ! -d "${SELF_DIR}/server" ]; then
     step "fetching installer repo -> ${CLONE_DIR}"
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq && apt-get install -y -qq git >/dev/null
+    # Only touch apt if git is actually missing — avoids re-tripping any stale
+    # third-party repo error just to fetch a tool that's usually already present.
+    if ! command -v git >/dev/null 2>&1; then
+        apt-get update -qq -o Dir::Etc::sourceparts=/dev/null -o APT::Get::List-Cleanup=0 || apt-get update -qq || true
+        apt-get install -y -qq git >/dev/null
+    fi
     if [ -d "${CLONE_DIR}/.git" ]; then git -C "${CLONE_DIR}" pull -q || true; else git clone -q --depth 1 -b "${BRANCH}" "${REPO_URL}" "${CLONE_DIR}"; fi
     exec bash "${CLONE_DIR}/install.sh"
 fi
@@ -138,14 +143,25 @@ echo "machine freeswitch.signalwire.com login signalwire password ${SIGNALWIRE_T
 chmod 600 /etc/apt/auth.conf.d/freeswitch.conf
 addsrc freeswitch.list "deb [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ trixie main"
 
-step "installing packages (this takes a while)"
-apt-get update -qq
-apt-get install -y -qq \
+step "updating apt indexes"
+apt-get update || die "apt-get update failed — check the repository errors above."
+step "installing packages — FreeSWITCH is large, this can take several minutes (progress shown below)"
+# NOTE: not silenced on purpose — the operator sees the download/unpack progress
+# so a long FreeSWITCH pull doesn't look like a hang.
+apt-get install -y \
     nginx mariadb-server \
     php8.3-fpm php8.3-cli php8.3-mysql php8.3-mbstring php8.3-xml php8.3-curl php8.3-bcmath php8.3-zip php8.3-intl php8.3-gd \
     kamailio kamailio-mysql-modules kamailio-tls-modules \
-    freeswitch-meta-all \
-    certbot fail2ban nftables composer jq >/dev/null 2>&1 || warn "some packages reported issues — review apt output"
+    freeswitch-meta-all freeswitch-config-vanilla \
+    certbot fail2ban nftables composer jq || die "package install failed — see apt output above."
+# our FreeSWITCH overlay references vanilla macros ($${domain}, loopback.auto, etc.) —
+# the base config must be present or FreeSWITCH won't parse its XML at all.
+[ -f /etc/freeswitch/freeswitch.xml ] && [ -f /etc/freeswitch/vars.xml ] || die "FreeSWITCH base config (freeswitch-config-vanilla) missing"
+# fail loudly if anything critical is missing rather than limping on
+for bin in nginx mariadbd php8.3 kamailio freeswitch composer; do
+    command -v "$bin" >/dev/null 2>&1 || [ -x "/usr/sbin/$bin" ] || dpkg -s "${bin%%[0-9]*}" >/dev/null 2>&1 \
+        || warn "expected component '$bin' not found on PATH — check its package"
+done
 ok "packages installed"
 
 # ---------------------------------------------------------------- databases
@@ -159,17 +175,22 @@ CREATE DATABASE IF NOT EXISTS ccportal_app CHARACTER SET utf8mb4;
 CREATE DATABASE IF NOT EXISTS switch;
 CREATE DATABASE IF NOT EXISTS switchcdr;
 CREATE DATABASE IF NOT EXISTS kamailio;
-CREATE USER IF NOT EXISTS 'ccportal'@'localhost' IDENTIFIED BY '${APP_DB_PASS}';
-ALTER  USER 'ccportal'@'localhost' IDENTIFIED BY '${APP_DB_PASS}';
-CREATE USER IF NOT EXISTS 'kamailio'@'localhost' IDENTIFIED BY '${KAM_DB_PASS}';
-ALTER  USER 'kamailio'@'localhost' IDENTIFIED BY '${KAM_DB_PASS}';
-GRANT ALL PRIVILEGES ON ccportal_app.* TO 'ccportal'@'localhost';
-GRANT SELECT,INSERT,UPDATE,DELETE ON switch.* TO 'ccportal'@'localhost';
-GRANT SELECT,INSERT,UPDATE,DELETE ON switchcdr.* TO 'ccportal'@'localhost';
-GRANT ALL PRIVILEGES ON kamailio.* TO 'kamailio'@'localhost';
-GRANT SELECT ON switch.customer_sip_account TO 'kamailio'@'localhost';
+SQL
+# Grant for BOTH 'localhost' (socket) and '127.0.0.1' (TCP): the portal .env uses
+# TCP 127.0.0.1, and MariaDB treats the two hosts as distinct accounts.
+for H in localhost 127.0.0.1; do
+mysql <<SQL
+CREATE USER IF NOT EXISTS 'ccportal'@'$H' IDENTIFIED BY '${APP_DB_PASS}';
+ALTER  USER 'ccportal'@'$H' IDENTIFIED BY '${APP_DB_PASS}';
+CREATE USER IF NOT EXISTS 'kamailio'@'$H' IDENTIFIED BY '${KAM_DB_PASS}';
+ALTER  USER 'kamailio'@'$H' IDENTIFIED BY '${KAM_DB_PASS}';
+GRANT ALL PRIVILEGES ON ccportal_app.* TO 'ccportal'@'$H';
+GRANT SELECT,INSERT,UPDATE,DELETE ON switch.*    TO 'ccportal'@'$H';
+GRANT SELECT,INSERT,UPDATE,DELETE ON switchcdr.* TO 'ccportal'@'$H';
+GRANT ALL PRIVILEGES ON kamailio.* TO 'kamailio'@'$H';
 FLUSH PRIVILEGES;
 SQL
+done
 step "loading schema (only into empty databases)"
 render() { sed -e "s|__PUBLIC_IP__|${PUBLIC_IP}|g" -e "s|__DOMAIN__|${DOMAIN}|g" \
                -e "s|__ESL_PASSWORD__|${ESL_PASSWORD}|g" -e "s|__SWITCH_SECRET__|${SWITCH_SECRET}|g" \
@@ -185,18 +206,29 @@ load_schema switch       "$REPO/database/schema-switch.sql"
 load_schema switchcdr    "$REPO/database/schema-switchcdr.sql"
 load_schema ccportal_app "$REPO/database/schema-ccportal_app.sql"
 load_schema kamailio     "$REPO/database/schema-kamailio.sql" render
+# Kamailio's `version` rows are load-bearing (usrloc/auth_db abort without them)
+# and were stripped by the --no-data dump. Upsert them UNCONDITIONALLY so both a
+# fresh install and a re-run over an already-loaded (but version-empty) DB heal.
+mysql kamailio < "$REPO/database/seed-kamailio-version.sql"
 # seeds: only when the target table is empty (avoids duplicate-key on re-run)
 [ "$(mysql -N -e "SELECT COUNT(*) FROM switch.sys_currencies" 2>/dev/null || echo 0)" -eq 0 ] && mysql switch < "$REPO/database/seed-currencies.sql" || true
 [ "$(mysql -N -e "SELECT COUNT(*) FROM ccportal_app.migrations" 2>/dev/null || echo 0)" -eq 0 ] && mysql ccportal_app < "$REPO/database/seed-migrations.sql" || true
+# table-specific grant AFTER the schema exists (the subscriber VIEW reads this table)
+mysql <<SQL
+GRANT SELECT ON switch.customer_sip_account TO 'kamailio'@'localhost';
+GRANT SELECT ON switch.customer_sip_account TO 'kamailio'@'127.0.0.1';
+FLUSH PRIVILEGES;
+SQL
 ok "databases ready"
 
 # ---------------------------------------------------------------- portal
 step "deploying portal"
+umask 022                     # reset the 077 from the secrets step: portal files must be group/other-readable
 mkdir -p "$APP_DIR"
 cp -a "$REPO/portal/." "$APP_DIR/"
 cd "$APP_DIR"
-sudo -u www-data HOME=/tmp COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist -q || \
-    COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist -q
+chown -R www-data:www-data "$APP_DIR"    # own it BEFORE composer so vendor/ is writable as www-data
+sudo -u www-data HOME=/tmp COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist -q
 cat > "$APP_DIR/.env" <<EOF
 APP_NAME="CommsChannel SBC"
 APP_ENV=production
@@ -235,11 +267,14 @@ ADMIN_SEED_EMAIL=${ADMIN_EMAIL}
 ADMIN_SEED_PASSWORD=${ADMIN_PASSWORD}
 EOF
 mkdir -p "$APP_DIR"/storage/framework/{cache/data,sessions,views} "$APP_DIR"/storage/logs "$APP_DIR"/bootstrap/cache
-# APP_KEY is set in .env from the persisted secret (stable across re-runs).
-php8.3 artisan db:seed --class=AdminUserSeeder --force -q || warn "admin seed skipped"
 chown -R www-data:www-data "$APP_DIR"
 find "$APP_DIR/storage" "$APP_DIR/bootstrap/cache" -type d -exec chmod 775 {} \; 2>/dev/null || true
-php8.3 artisan config:cache -q
+# .env holds secrets — lock it down (config.php below inherits www-data from the runtime user)
+chmod 640 "$APP_DIR/.env"; chown www-data:www-data "$APP_DIR/.env"
+# Run artisan AS www-data so every generated file is owned/readable by php-fpm.
+# db:seed must NOT be swallowed — a silent failure = no admin account on a green banner.
+sudo -u www-data HOME=/tmp php8.3 artisan db:seed --class=AdminUserSeeder --force || die "admin seed failed — check DB grants / users table"
+sudo -u www-data HOME=/tmp php8.3 artisan config:cache -q
 ok "portal deployed"
 
 # ---------------------------------------------------------------- server configs
@@ -255,6 +290,29 @@ while IFS= read -r -d '' f; do
         *) copy_render "$f" "$dest";;
     esac
 done < <(find "$REPO/server" -type f -print0)
+
+# --- nginx: enable our vhosts, drop Debian's stock default site (B1) ---
+rm -f /etc/nginx/sites-enabled/default
+ln -sf /etc/nginx/sites-available/ccportal.conf        /etc/nginx/sites-enabled/ccportal.conf
+ln -sf /etc/nginx/sites-available/ccportal-switch.conf /etc/nginx/sites-enabled/ccportal-switch.conf
+
+# --- dashboard stats output dir (H4: cc-collect-stats mv target) ---
+install -d -m 0755 /var/lib/ccportal
+
+# --- FreeSWITCH profile/dialplan hygiene ---
+# Drop the IPv6 profiles (they bind [::]:5060/[::]:5080 -> collide with Kamailio /
+# expose a second edge). KEEP external.xml: FreeSWITCH needs it to bridge OUT to
+# carriers (sofia/external/...), and inbound 5080 is firewalled (H2, corrected).
+rm -f /etc/freeswitch/sip_profiles/internal-ipv6.xml /etc/freeswitch/sip_profiles/external-ipv6.xml
+# Remove vanilla sample dialplans so a portal/xml_curl outage cannot fall through
+# to echo/voicemail/conference; our safe default.xml (shipped above) stays (M1).
+rm -rf /etc/freeswitch/dialplan/default /etc/freeswitch/dialplan/public /etc/freeswitch/dialplan/skinny-patterns
+# Set our codec list in the vanilla vars.xml (B3-codec).
+if [ -f /etc/freeswitch/vars.xml ]; then
+    sed -i -E 's|(global_codec_prefs=)[^"]*|\1PCMU,PCMA,OPUS,G722,G729,GSM|; s|(outbound_codec_prefs=)[^"]*|\1PCMU,PCMA,OPUS,G722,G729,GSM|' /etc/freeswitch/vars.xml
+fi
+chown -R freeswitch:freeswitch /etc/freeswitch 2>/dev/null || true
+
 # nftables: render + inject public-SIP block on opt-in
 PUBLIC_BLOCK="        # (public SIP not enabled — add carrier/admin IPs to the nft sets, or re-run with --open-sip)"
 if [ "$OPEN_SIP" = yes ]; then
@@ -275,20 +333,29 @@ nft -f /etc/nftables.conf || warn "nftables load reported an error — review /e
 ok "configs installed"
 
 # ---------------------------------------------------------------- TLS
-step "obtaining TLS certificate for $DOMAIN"
+# Ordering matters (H1): the nginx vhosts reference the cert, so a cert file MUST
+# exist before nginx can start; and certbot --webroot needs nginx already serving
+# :80. So: (1) drop a self-signed placeholder if no cert yet, (2) start nginx,
+# (3) run certbot with nginx up, (4) reload on success.
+step "preparing TLS for $DOMAIN"
 mkdir -p /var/www/html
-systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
-if certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --email "$LE_EMAIL" --agree-tos --non-interactive --keep-until-expiring >/dev/null 2>&1; then
-    ok "Lets Encrypt cert in place"
-elif [ -s "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-    ok "existing cert kept (certbot could not renew right now)"
-else
-    warn "certbot failed (DNS for $DOMAIN must point at $PUBLIC_IP). Generating a self-signed cert so services start; re-run this installer once DNS is live to get a real one."
+if [ ! -s "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     mkdir -p "/etc/letsencrypt/live/$DOMAIN"
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 90 \
         -keyout "/etc/letsencrypt/live/$DOMAIN/privkey.pem" -out "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" \
         -subj "/CN=$DOMAIN" >/dev/null 2>&1
     cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "/etc/letsencrypt/live/$DOMAIN/chain.pem"
+fi
+# now nginx can validate + start (vhosts enabled earlier)
+nginx -t && { systemctl enable nginx >/dev/null 2>&1 || true; systemctl restart nginx; } || warn "nginx config test failed — review 'nginx -t'"
+# a real ACME cert is marked by a renewal conf; only then skip re-issuance
+if [ -f "/etc/letsencrypt/renewal/$DOMAIN.conf" ]; then
+    ok "Lets Encrypt cert already issued — keeping it"
+elif certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --email "$LE_EMAIL" --agree-tos --non-interactive >/dev/null 2>&1; then
+    systemctl reload nginx || true
+    ok "Lets Encrypt cert issued"
+else
+    warn "certbot could not issue yet (is DNS for $DOMAIN pointed at $PUBLIC_IP?). Serving a self-signed cert for now — re-run this installer once DNS resolves to get a real one."
 fi
 # Kamailio TLS copy + renewal hook
 mkdir -p /etc/kamailio/tls
@@ -307,9 +374,10 @@ chmod +x /etc/letsencrypt/renewal-hooks/deploy/20-cc-reload.sh
 
 # ---------------------------------------------------------------- services
 step "enabling services"
+systemctl daemon-reload    # pick up the timer/service units the copy loop just installed
 systemctl enable --now php8.3-fpm nginx fail2ban nftables >/dev/null 2>&1 || true
 for svc in kamailio freeswitch; do systemctl enable "$svc" >/dev/null 2>&1 || true; systemctl restart "$svc" >/dev/null 2>&1 || warn "$svc did not start — check: journalctl -u $svc"; done
-for t in ccportal-scheduler.timer cc-stats.timer; do systemctl enable --now "$t" >/dev/null 2>&1 || true; done
+for t in ccportal-scheduler.timer cc-stats.timer; do systemctl enable --now "$t" >/dev/null 2>&1 || warn "$t did not enable — check: systemctl status $t"; done
 systemctl reload nginx 2>/dev/null || systemctl restart nginx || true
 
 # ---------------------------------------------------------------- done

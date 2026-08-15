@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh CommsChannel dashboard stats (<120s so the panel never reads stale)
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=60
+AccuracySec=5s
+[Install]
+WantedBy=timers.target

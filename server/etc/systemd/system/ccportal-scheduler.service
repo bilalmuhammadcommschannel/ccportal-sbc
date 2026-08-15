@@ -1,0 +1,9 @@
+[Unit]
+Description=CommsChannel portal Laravel scheduler tick
+After=mariadb.service php8.3-fpm.service
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+Environment=HOME=/tmp
+ExecStart=/usr/bin/php8.3 /var/www/ccportal/artisan schedule:run

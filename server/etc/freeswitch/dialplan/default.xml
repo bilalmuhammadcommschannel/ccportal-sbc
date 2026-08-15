@@ -1,0 +1,16 @@
+<include>
+  <!--
+    Static fallback for context "default". In normal operation mod_xml_curl
+    serves this context live from the portal; this file is only consulted if the
+    portal/xml_curl is unreachable. Fail CLOSED (reject) rather than dropping to
+    FreeSWITCH's vanilla echo/voicemail/conference extensions.
+  -->
+  <context name="default">
+    <extension name="cc_portal_unavailable">
+      <condition field="destination_number" expression="^.*$">
+        <action application="respond" data="503 Portal Unavailable"/>
+        <action application="hangup" data="NORMAL_TEMPORARY_FAILURE"/>
+      </condition>
+    </extension>
+  </context>
+</include>
