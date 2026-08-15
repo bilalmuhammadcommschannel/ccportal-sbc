@@ -12,25 +12,26 @@ A self-contained **session border controller + billing portal** for a fresh Debi
 On a **fresh Debian 13 (trixie)** server, as root:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bilalmuhammadcommschannel/ccportal-sbc/main/install.sh | sudo bash
+curl -O https://raw.githubusercontent.com/bilalmuhammadcommschannel/ccportal-sbc/main/install.sh
+bash install.sh
 ```
 
-It prompts for three things:
+It prompts for everything it needs, up front:
 
 | Prompt | What it is |
 |---|---|
+| **GitHub token** | Personal access token to clone the repo. Press Enter to skip while the repo is public. |
 | **Domain** | FQDN for the portal + SIP realm (e.g. `sbc.example.com`). Point its DNS `A` record at the server first. |
 | **Email** | For the Let's Encrypt certificate + expiry notices. |
 | **SignalWire token** | Free personal access token from [signalwire.com](https://signalwire.com) — FreeSWITCH 1.11 packages are gated behind it. |
+| **Open SIP now?** | Whether to open 5060/5061/RTP to the public internet immediately (default: no — SIP stays restricted to trusted carrier/admin IPs until you're ready). |
 
-You'll also be asked whether to **open SIP to the public internet** now (default: no — SIP stays restricted to trusted carrier/admin IPs until you're ready).
-
-Non-interactive:
+Tokens are entered hidden (not echoed). Non-interactive / unattended:
 
 ```bash
-curl -fsSL .../install.sh | sudo bash -s -- \
-  --domain sbc.example.com --email you@example.com \
-  --signalwire-token pt_XXXX --open-sip
+curl -O https://raw.githubusercontent.com/bilalmuhammadcommschannel/ccportal-sbc/main/install.sh
+bash install.sh --domain sbc.example.com --email you@example.com \
+  --signalwire-token pt_XXXX --github-pat ghp_XXXX --open-sip
 ```
 
 ## What it does

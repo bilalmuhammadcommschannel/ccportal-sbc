@@ -27,35 +27,45 @@ die() { c "1;31" "FATAL: $*"; exit 1; }
 
 [ "$(id -u)" = 0 ] || die "run as root (use sudo)."
 
+# ---------------------------------------------------------------- inputs (asked up front)
+DOMAIN="${DOMAIN:-}"; LE_EMAIL="${LE_EMAIL:-}"; SIGNALWIRE_TOKEN="${SIGNALWIRE_TOKEN:-}"; OPEN_SIP="${OPEN_SIP:-}"; GITHUB_PAT="${GITHUB_PAT:-}"
+while [ $# -gt 0 ]; do case "$1" in
+    --domain) DOMAIN="$2"; shift 2;;
+    --email) LE_EMAIL="$2"; shift 2;;
+    --signalwire-token) SIGNALWIRE_TOKEN="$2"; shift 2;;
+    --github-pat) GITHUB_PAT="$2"; shift 2;;
+    --open-sip) OPEN_SIP=yes; shift;;
+    *) shift;;
+esac; done
+
+ask()    { local p="$1" d="${2:-}" v; if [ -n "$d" ]; then read -rp "$p [$d]: " v </dev/tty || true; echo "${v:-$d}"; else read -rp "$p: " v </dev/tty || true; echo "$v"; fi; }
+asksec() { local p="$1" v; read -rsp "$p: " v </dev/tty || true; echo >/dev/tty; echo "$v"; }   # hidden entry for tokens
+
+# Prompt for everything BEFORE cloning, so a re-exec (below) never re-asks.
+[ -n "$GITHUB_PAT" ]       || GITHUB_PAT="$(asksec 'GitHub personal access token (press Enter to skip for a public repo)')"
+[ -n "$DOMAIN" ]           || DOMAIN="$(ask 'SIP + portal domain (e.g. sbc.example.com)')"
+[ -n "$LE_EMAIL" ]         || LE_EMAIL="$(ask 'Email for Lets Encrypt / expiry notices')"
+[ -n "$SIGNALWIRE_TOKEN" ] || SIGNALWIRE_TOKEN="$(asksec 'SignalWire token (free from signalwire.com; for the FreeSWITCH repo)')"
+if [ -z "$OPEN_SIP" ]; then a="$(ask 'Open SIP (5060/5061/RTP) to the public internet now? y/N' 'N')"; [ "${a,,}" = y ] && OPEN_SIP=yes || OPEN_SIP=no; fi
+[ -n "$DOMAIN" ] || die "domain is required."
+[ -n "$SIGNALWIRE_TOKEN" ] || die "SignalWire token is required for FreeSWITCH."
+export DOMAIN LE_EMAIL SIGNALWIRE_TOKEN OPEN_SIP GITHUB_PAT
+
 # ---------------------------------------------------------------- self-bootstrap
-# When piped from curl, the repo isn't on disk yet — clone it and re-exec.
+# First run is usually just this one file (fetched via `curl -O`); the rest of
+# the repo isn't on disk yet. Clone it — with the PAT if one was given, so a
+# private repo works too — then re-exec. Inputs are exported, so no re-prompt.
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 if [ -z "${SELF_DIR}" ] || [ ! -d "${SELF_DIR}/server" ]; then
     step "fetching installer repo -> ${CLONE_DIR}"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq && apt-get install -y -qq git >/dev/null
-    if [ -d "${CLONE_DIR}/.git" ]; then git -C "${CLONE_DIR}" pull -q; else git clone -q --depth 1 -b "${BRANCH}" "${REPO_URL}" "${CLONE_DIR}"; fi
-    exec bash "${CLONE_DIR}/install.sh" "$@"
+    CLONE_URL="${REPO_URL}"
+    [ -n "${GITHUB_PAT}" ] && CLONE_URL="https://x-access-token:${GITHUB_PAT}@github.com/${REPO_SLUG}.git"
+    if [ -d "${CLONE_DIR}/.git" ]; then git -C "${CLONE_DIR}" pull -q; else git clone -q --depth 1 -b "${BRANCH}" "${CLONE_URL}" "${CLONE_DIR}"; fi
+    exec bash "${CLONE_DIR}/install.sh"
 fi
 REPO="${SELF_DIR}"
-
-# ---------------------------------------------------------------- inputs
-DOMAIN="${DOMAIN:-}"; LE_EMAIL="${LE_EMAIL:-}"; SIGNALWIRE_TOKEN="${SIGNALWIRE_TOKEN:-}"; OPEN_SIP="${OPEN_SIP:-}"
-while [ $# -gt 0 ]; do case "$1" in
-    --domain) DOMAIN="$2"; shift 2;;
-    --email) LE_EMAIL="$2"; shift 2;;
-    --signalwire-token) SIGNALWIRE_TOKEN="$2"; shift 2;;
-    --open-sip) OPEN_SIP=yes; shift;;
-    *) shift;;
-esac; done
-
-ask() { local p="$1" d="${2:-}" v; if [ -n "$d" ]; then read -rp "$p [$d]: " v </dev/tty || true; echo "${v:-$d}"; else read -rp "$p: " v </dev/tty || true; echo "$v"; fi; }
-[ -n "$DOMAIN" ]           || DOMAIN="$(ask 'SIP + portal domain (e.g. sbc.example.com)')"
-[ -n "$LE_EMAIL" ]         || LE_EMAIL="$(ask 'Email for Lets Encrypt / expiry notices')"
-[ -n "$SIGNALWIRE_TOKEN" ] || SIGNALWIRE_TOKEN="$(ask 'SignalWire personal access token (free from signalwire.com; for the FreeSWITCH repo)')"
-if [ -z "$OPEN_SIP" ]; then a="$(ask 'Open SIP (5060/5061/RTP) to the public internet now? y/N' 'N')"; [ "${a,,}" = y ] && OPEN_SIP=yes || OPEN_SIP=no; fi
-[ -n "$DOMAIN" ] || die "domain is required."
-[ -n "$SIGNALWIRE_TOKEN" ] || die "SignalWire token is required for FreeSWITCH."
 
 PUBLIC_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | grep -oE 'src [0-9.]+' | awk '{print $2}' | head -1)"
 [ -n "$PUBLIC_IP" ] || PUBLIC_IP="$(hostname -I | awk '{print $1}')"
