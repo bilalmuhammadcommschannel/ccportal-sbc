@@ -112,18 +112,31 @@ step "configuring apt repositories"
 export DEBIAN_FRONTEND=noninteractive
 install -d -m 0755 /usr/share/keyrings
 apt-get install -y -qq curl gnupg ca-certificates lsb-release apt-transport-https >/dev/null
+# Install a signing key as a world-readable binary keyring. Debian 13 verifies
+# with sqv running as the unprivileged _apt user, so the keyring MUST be 0644
+# (an earlier umask left these 0600 => "Permission denied / not signed"). Armored
+# keys are dearmored; already-binary keys are copied as-is.
+install_key() { # url dest [curl-extra-args...]
+    local url="$1" dest="$2"; shift 2
+    local tmp; tmp="$(mktemp)"
+    curl -fsSL "$@" "$url" -o "$tmp" || { rm -f "$tmp"; return 1; }
+    if head -c 40 "$tmp" | grep -q 'BEGIN PGP'; then gpg --dearmor < "$tmp" > "$dest"; else cp "$tmp" "$dest"; fi
+    chmod 0644 "$dest"; rm -f "$tmp"
+}
+addsrc() { echo "$2" > "/etc/apt/sources.list.d/$1"; chmod 0644 "/etc/apt/sources.list.d/$1"; }
 # PHP (sury)
-curl -fsSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/sury-php.gpg
-echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ trixie main" > /etc/apt/sources.list.d/php.list
+install_key https://packages.sury.org/php/apt.gpg /usr/share/keyrings/sury-php.gpg || die "could not fetch the sury PHP signing key"
+addsrc php.list "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ trixie main"
 # Kamailio 6.0
-curl -fsSL http://deb.kamailio.org/kamailiodebkey.gpg | gpg --dearmor -o /usr/share/keyrings/kamailio-archive.gpg
-echo "deb [signed-by=/usr/share/keyrings/kamailio-archive.gpg] http://deb.kamailio.org/kamailio60 trixie main" > /etc/apt/sources.list.d/kamailio.list
+install_key http://deb.kamailio.org/kamailiodebkey.gpg /usr/share/keyrings/kamailio-archive.gpg || die "could not fetch the Kamailio signing key"
+addsrc kamailio.list "deb [signed-by=/usr/share/keyrings/kamailio-archive.gpg] http://deb.kamailio.org/kamailio60 trixie main"
 # FreeSWITCH (SignalWire, token-gated)
-curl -fsSL --user "signalwire:${SIGNALWIRE_TOKEN}" https://freeswitch.signalwire.com/repo/deb/debian-release/signalwire-freeswitch-repo.gpg -o /usr/share/keyrings/signalwire-freeswitch-repo.gpg \
+install_key https://freeswitch.signalwire.com/repo/deb/debian-release/signalwire-freeswitch-repo.gpg /usr/share/keyrings/signalwire-freeswitch-repo.gpg --user "signalwire:${SIGNALWIRE_TOKEN}" \
     || die "SignalWire token rejected — check it at signalwire.com."
+# auth.conf carries the token: stays root-only 0600 (read by apt as root, not _apt)
 echo "machine freeswitch.signalwire.com login signalwire password ${SIGNALWIRE_TOKEN}" > /etc/apt/auth.conf.d/freeswitch.conf
 chmod 600 /etc/apt/auth.conf.d/freeswitch.conf
-echo "deb [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ trixie main" > /etc/apt/sources.list.d/freeswitch.list
+addsrc freeswitch.list "deb [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ trixie main"
 
 step "installing packages (this takes a while)"
 apt-get update -qq
