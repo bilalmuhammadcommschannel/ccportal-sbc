@@ -227,8 +227,9 @@ umask 022                     # reset the 077 from the secrets step: portal file
 mkdir -p "$APP_DIR"
 cp -a "$REPO/portal/." "$APP_DIR/"
 cd "$APP_DIR"
-chown -R www-data:www-data "$APP_DIR"    # own it BEFORE composer so vendor/ is writable as www-data
-sudo -u www-data HOME=/tmp COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist -q
+mkdir -p "$APP_DIR"/storage/framework/{cache/data,sessions,views} "$APP_DIR"/storage/logs "$APP_DIR"/bootstrap/cache
+# Write .env FIRST — composer's post-install 'artisan package:discover' boots the
+# framework and needs a valid .env (APP_KEY etc.) or it exits non-zero.
 cat > "$APP_DIR/.env" <<EOF
 APP_NAME="CommsChannel SBC"
 APP_ENV=production
@@ -266,12 +267,13 @@ SWITCH_SIP_PROXY=${PUBLIC_IP}
 ADMIN_SEED_EMAIL=${ADMIN_EMAIL}
 ADMIN_SEED_PASSWORD=${ADMIN_PASSWORD}
 EOF
-mkdir -p "$APP_DIR"/storage/framework/{cache/data,sessions,views} "$APP_DIR"/storage/logs "$APP_DIR"/bootstrap/cache
+# own the tree as www-data BEFORE composer so vendor/ + generated caches are writable by it
+chmod 640 "$APP_DIR/.env"
 chown -R www-data:www-data "$APP_DIR"
 find "$APP_DIR/storage" "$APP_DIR/bootstrap/cache" -type d -exec chmod 775 {} \; 2>/dev/null || true
-# .env holds secrets — lock it down (config.php below inherits www-data from the runtime user)
-chmod 640 "$APP_DIR/.env"; chown www-data:www-data "$APP_DIR/.env"
-# Run artisan AS www-data so every generated file is owned/readable by php-fpm.
+# Everything runs AS www-data so all generated files are owned/readable by php-fpm.
+sudo -u www-data HOME=/tmp COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist -q \
+    || die "composer install failed — see output above"
 # db:seed must NOT be swallowed — a silent failure = no admin account on a green banner.
 sudo -u www-data HOME=/tmp php8.3 artisan db:seed --class=AdminUserSeeder --force || die "admin seed failed — check DB grants / users table"
 sudo -u www-data HOME=/tmp php8.3 artisan config:cache -q
