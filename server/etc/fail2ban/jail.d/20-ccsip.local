@@ -1,0 +1,32 @@
+[DEFAULT]
+banaction = nftables-multiport
+J7.0.0.1/8 ::1
+
+# SIP auth failures / floods / malformed packets, read straight from the journal
+# (this host has no rsyslog — journald is the only log sink).
+[ccsip-auth]
+enabled      = true
+filter       = ccsip-auth
+backend      = systemd
+journalmatch = _SYSTEMD_UNIT=kamailio.service
+port         = 5060,5061
+protocol     = all
+findtime     = 10m
+maxretry     = 5
+bantime  = 1w
+bantime.increment = true
+bantime.factor    = 6
+bantime.maxtime   = 90d
+
+# Extension enumeration seen at the portal's SIP directory endpoint.
+[ccsip-scanner]
+enabled  = true
+filter   = ccsip-scanner
+logpath  = /var/www/ccportal/storage/logs/auth-*.log
+port     = 5060,5061
+protocol = all
+findtime = 10m
+maxretry = 4
+bantime  = 1w
+bantime.increment = true
+bantime.maxtime   = 90d

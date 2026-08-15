@@ -1,0 +1,30 @@
+[DEFAULT]
+# ban at the firewall via nftables (matches the host's nft ruleset)
+banaction  = nftables-multiport
+backend    = auto
+# never lock out the operator's own addresses
+J7.0.0.1/8 ::1
+
+[ccportal-auth]
+enabled  = true
+filter   = ccportal-auth
+logpath  = /var/www/ccportal/storage/logs/auth-*.log
+port     = http,https
+findtime = 10m
+maxretry = 5
+bantime  = 1w
+# repeat offenders get progressively longer bans
+bantime.increment = true
+bantime.factor    = 4
+bantime.maxtime   = 90d
+
+[ccportal-probe]
+enabled  = true
+filter   = ccportal-probe
+logpath  = /var/log/nginx/ccportal_access.log
+port     = http,https
+findtime = 5m
+maxretry = 20
+bantime  = 1w
+bantime.increment = true
+bantime.maxtime   = 90d

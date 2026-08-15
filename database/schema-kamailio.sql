@@ -1,0 +1,1125 @@
+/*M!999999\- enable the sandbox mode */ 
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*M!100616 SET @OLD_NOTE_VERBOSITY=@@NOTE_VERBOSITY, NOTE_VERBOSITY=0 */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `acc` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `method` varchar(16) NOT NULL DEFAULT '',
+  `from_tag` varchar(64) NOT NULL DEFAULT '',
+  `to_tag` varchar(64) NOT NULL DEFAULT '',
+  `callid` varchar(255) NOT NULL DEFAULT '',
+  `sip_code` varchar(3) NOT NULL DEFAULT '',
+  `sip_reason` varchar(128) NOT NULL DEFAULT '',
+  `time` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `callid_idx` (`callid`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `acc_cdrs` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `start_time` datetime NOT NULL DEFAULT '2000-01-01 00:00:00',
+  `end_time` datetime NOT NULL DEFAULT '2000-01-01 00:00:00',
+  `duration` float(10,3) NOT NULL DEFAULT 0.000,
+  PRIMARY KEY (`id`),
+  KEY `start_time_idx` (`start_time`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `active_watchers` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `presentity_uri` varchar(128) NOT NULL,
+  `watcher_username` varchar(64) NOT NULL,
+  `watcher_domain` varchar(64) NOT NULL,
+  `to_user` varchar(64) NOT NULL,
+  `to_domain` varchar(64) NOT NULL,
+  `event` varchar(64) NOT NULL DEFAULT 'presence',
+  `event_id` varchar(64) DEFAULT NULL,
+  `to_tag` varchar(64) NOT NULL,
+  `from_tag` varchar(64) NOT NULL,
+  `callid` varchar(255) NOT NULL,
+  `local_cseq` int(11) NOT NULL,
+  `remote_cseq` int(11) NOT NULL,
+  `contact` varchar(128) NOT NULL,
+  `record_route` text DEFAULT NULL,
+  `expires` int(11) NOT NULL,
+  `status` int(11) NOT NULL DEFAULT 2,
+  `reason` varchar(64) NOT NULL,
+  `version` int(11) NOT NULL DEFAULT 0,
+  `socket_info` varchar(64) NOT NULL,
+  `local_contact` varchar(128) NOT NULL,
+  `from_user` varchar(64) NOT NULL,
+  `from_domain` varchar(64) NOT NULL,
+  `updated` int(11) NOT NULL,
+  `updated_winfo` int(11) NOT NULL,
+  `flags` int(11) NOT NULL DEFAULT 0,
+  `user_agent` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `active_watchers_idx` (`callid`,`to_tag`,`from_tag`) USING BTREE,
+  KEY `active_watchers_expires` (`expires`) USING BTREE,
+  KEY `active_watchers_pres` (`presentity_uri`,`event`) USING BTREE,
+  KEY `updated_idx` (`updated`) USING BTREE,
+  KEY `updated_winfo_idx` (`updated_winfo`,`presentity_uri`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `address` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `grp` int(11) unsigned NOT NULL DEFAULT 1,
+  `ip_addr` varchar(50) NOT NULL,
+  `mask` int(11) NOT NULL DEFAULT 32,
+  `port` smallint(5) unsigned NOT NULL DEFAULT 0,
+  `tag` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `aliases` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `ruid` varchar(64) NOT NULL DEFAULT '',
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `domain` varchar(64) DEFAULT NULL,
+  `contact` varchar(255) NOT NULL DEFAULT '',
+  `received` varchar(128) DEFAULT NULL,
+  `path` varchar(512) DEFAULT NULL,
+  `expires` datetime NOT NULL DEFAULT '2030-05-28 21:32:15',
+  `q` float(10,2) NOT NULL DEFAULT 1.00,
+  `callid` varchar(255) NOT NULL DEFAULT 'Default-Call-ID',
+  `cseq` int(11) NOT NULL DEFAULT 1,
+  `last_modified` datetime NOT NULL DEFAULT '2000-01-01 00:00:01',
+  `flags` int(11) NOT NULL DEFAULT 0,
+  `cflags` int(11) NOT NULL DEFAULT 0,
+  `user_agent` varchar(255) NOT NULL DEFAULT '',
+  `socket` varchar(64) DEFAULT NULL,
+  `methods` int(11) DEFAULT NULL,
+  `instance` varchar(255) DEFAULT NULL,
+  `reg_id` int(11) NOT NULL DEFAULT 0,
+  `server_id` int(11) NOT NULL DEFAULT 0,
+  `connection_id` int(11) NOT NULL DEFAULT 0,
+  `keepalive` int(11) NOT NULL DEFAULT 0,
+  `partition` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ruid_idx` (`ruid`) USING BTREE,
+  KEY `account_contact_idx` (`username`,`domain`,`contact`) USING BTREE,
+  KEY `expires_idx` (`expires`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `carrier_name` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `carrier` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `carrierfailureroute` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `carrier` int(10) unsigned NOT NULL DEFAULT 0,
+  `domain` int(10) unsigned NOT NULL DEFAULT 0,
+  `scan_prefix` varchar(64) NOT NULL DEFAULT '',
+  `host_name` varchar(128) NOT NULL DEFAULT '',
+  `reply_code` varchar(3) NOT NULL DEFAULT '',
+  `flags` int(11) unsigned NOT NULL DEFAULT 0,
+  `mask` int(11) unsigned NOT NULL DEFAULT 0,
+  `next_domain` int(10) unsigned NOT NULL DEFAULT 0,
+  `description` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `carrierroute` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `carrier` int(10) unsigned NOT NULL DEFAULT 0,
+  `domain` int(10) unsigned NOT NULL DEFAULT 0,
+  `scan_prefix` varchar(64) NOT NULL DEFAULT '',
+  `flags` int(11) unsigned NOT NULL DEFAULT 0,
+  `mask` int(11) unsigned NOT NULL DEFAULT 0,
+  `prob` float NOT NULL DEFAULT 0,
+  `strip` int(11) unsigned NOT NULL DEFAULT 0,
+  `rewrite_host` varchar(128) NOT NULL DEFAULT '',
+  `rewrite_prefix` varchar(64) NOT NULL DEFAULT '',
+  `rewrite_suffix` varchar(64) NOT NULL DEFAULT '',
+  `description` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `cpl` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL,
+  `domain` varchar(64) NOT NULL DEFAULT '',
+  `cpl_xml` text DEFAULT NULL,
+  `cpl_bin` text DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `account_idx` (`username`,`domain`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dbaliases` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `alias_username` varchar(64) NOT NULL DEFAULT '',
+  `alias_domain` varchar(64) NOT NULL DEFAULT '',
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `domain` varchar(64) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `alias_user_idx` (`alias_username`) USING BTREE,
+  KEY `alias_idx` (`alias_username`,`alias_domain`) USING BTREE,
+  KEY `target_idx` (`username`,`domain`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dialog` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `hash_entry` int(10) unsigned NOT NULL,
+  `hash_id` int(10) unsigned NOT NULL,
+  `callid` varchar(255) NOT NULL,
+  `from_uri` varchar(128) NOT NULL,
+  `from_tag` varchar(64) NOT NULL,
+  `to_uri` varchar(128) NOT NULL,
+  `to_tag` varchar(64) NOT NULL,
+  `caller_cseq` varchar(20) NOT NULL,
+  `callee_cseq` varchar(20) NOT NULL,
+  `caller_route_set` varchar(512) DEFAULT NULL,
+  `callee_route_set` varchar(512) DEFAULT NULL,
+  `caller_contact` varchar(128) NOT NULL,
+  `callee_contact` varchar(128) NOT NULL,
+  `caller_sock` varchar(64) NOT NULL,
+  `callee_sock` varchar(64) NOT NULL,
+  `state` int(10) unsigned NOT NULL,
+  `start_time` int(10) unsigned NOT NULL,
+  `timeout` int(10) unsigned NOT NULL DEFAULT 0,
+  `sflags` int(10) unsigned NOT NULL DEFAULT 0,
+  `iflags` int(10) unsigned NOT NULL DEFAULT 0,
+  `toroute_name` varchar(32) DEFAULT NULL,
+  `req_uri` varchar(128) NOT NULL,
+  `xdata` varchar(512) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `hash_idx` (`hash_entry`,`hash_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dialog_vars` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `hash_entry` int(10) unsigned NOT NULL,
+  `hash_id` int(10) unsigned NOT NULL,
+  `dialog_key` varchar(128) NOT NULL,
+  `dialog_value` varchar(512) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `hash_idx` (`hash_entry`,`hash_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dialplan` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `dpid` int(11) NOT NULL,
+  `pr` int(11) NOT NULL,
+  `match_op` int(11) NOT NULL,
+  `match_exp` varchar(64) NOT NULL,
+  `match_len` int(11) NOT NULL,
+  `subst_exp` varchar(64) NOT NULL,
+  `repl_exp` varchar(64) NOT NULL,
+  `attrs` varchar(64) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dispatcher` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `setid` int(11) NOT NULL DEFAULT 0,
+  `destination` varchar(192) NOT NULL DEFAULT '',
+  `flags` int(11) NOT NULL DEFAULT 0,
+  `priority` int(11) NOT NULL DEFAULT 0,
+  `attrs` varchar(128) NOT NULL DEFAULT '',
+  `description` varchar(64) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `domain` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `domain` varchar(64) NOT NULL,
+  `did` varchar(64) DEFAULT NULL,
+  `last_modified` datetime NOT NULL DEFAULT '2000-01-01 00:00:01',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `domain_idx` (`domain`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `domain_attrs` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `did` varchar(64) NOT NULL,
+  `name` varchar(32) NOT NULL,
+  `type` int(10) unsigned NOT NULL,
+  `value` varchar(255) NOT NULL,
+  `last_modified` datetime NOT NULL DEFAULT '2000-01-01 00:00:01',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `domain_attrs_idx` (`did`,`name`,`value`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `domain_name` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `domain` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `domainpolicy` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `rule` varchar(255) NOT NULL,
+  `type` varchar(255) NOT NULL,
+  `att` varchar(255) DEFAULT NULL,
+  `val` varchar(128) DEFAULT NULL,
+  `description` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `rav_idx` (`rule`,`att`,`val`) USING BTREE,
+  KEY `rule_idx` (`rule`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dr_gateways` (
+  `gwid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `type` int(11) unsigned NOT NULL DEFAULT 0,
+  `address` varchar(128) NOT NULL,
+  `strip` int(11) unsigned NOT NULL DEFAULT 0,
+  `pri_prefix` varchar(64) DEFAULT NULL,
+  `attrs` varchar(255) DEFAULT NULL,
+  `description` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`gwid`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dr_groups` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL,
+  `domain` varchar(128) NOT NULL DEFAULT '',
+  `groupid` int(11) unsigned NOT NULL DEFAULT 0,
+  `description` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dr_gw_lists` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `gwlist` varchar(255) NOT NULL,
+  `description` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dr_rules` (
+  `ruleid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `groupid` varchar(255) NOT NULL,
+  `prefix` varchar(64) NOT NULL,
+  `timerec` varchar(255) NOT NULL,
+  `priority` int(11) NOT NULL DEFAULT 0,
+  `routeid` varchar(64) NOT NULL,
+  `gwlist` varchar(255) NOT NULL,
+  `description` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`ruleid`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `globalblacklist` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `prefix` varchar(64) NOT NULL DEFAULT '',
+  `whitelist` tinyint(1) NOT NULL DEFAULT 0,
+  `description` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `globalblacklist_idx` (`prefix`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `grp` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `domain` varchar(64) NOT NULL DEFAULT '',
+  `grp` varchar(64) NOT NULL DEFAULT '',
+  `last_modified` datetime NOT NULL DEFAULT '2000-01-01 00:00:01',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `account_group_idx` (`username`,`domain`,`grp`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `htable` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `key_name` varchar(256) NOT NULL DEFAULT '',
+  `key_type` int(11) NOT NULL DEFAULT 0,
+  `value_type` int(11) NOT NULL DEFAULT 0,
+  `key_value` varchar(512) NOT NULL DEFAULT '',
+  `expires` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `imc_members` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL,
+  `domain` varchar(64) NOT NULL,
+  `room` varchar(64) NOT NULL,
+  `flag` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `account_room_idx` (`username`,`domain`,`room`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `imc_rooms` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(64) NOT NULL,
+  `domain` varchar(64) NOT NULL,
+  `flag` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name_domain_idx` (`name`,`domain`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `lcr_gw` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `lcr_id` smallint(5) unsigned NOT NULL,
+  `gw_name` varchar(128) DEFAULT NULL,
+  `ip_addr` varchar(50) DEFAULT NULL,
+  `hostname` varchar(64) DEFAULT NULL,
+  `port` smallint(5) unsigned DEFAULT NULL,
+  `params` varchar(64) DEFAULT NULL,
+  `uri_scheme` tinyint(3) unsigned DEFAULT NULL,
+  `transport` tinyint(3) unsigned DEFAULT NULL,
+  `strip` tinyint(3) unsigned DEFAULT NULL,
+  `prefix` varchar(16) DEFAULT NULL,
+  `tag` varchar(64) DEFAULT NULL,
+  `flags` int(10) unsigned NOT NULL DEFAULT 0,
+  `defunct` int(10) unsigned DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `lcr_id_idx` (`lcr_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `lcr_rule` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `lcr_id` smallint(5) unsigned NOT NULL,
+  `prefix` varchar(16) DEFAULT NULL,
+  `from_uri` varchar(64) DEFAULT NULL,
+  `request_uri` varchar(64) DEFAULT NULL,
+  `stopper` int(10) unsigned NOT NULL DEFAULT 0,
+  `enabled` int(10) unsigned NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `lcr_id_prefix_from_uri_idx` (`lcr_id`,`prefix`,`from_uri`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `lcr_rule_target` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `lcr_id` smallint(5) unsigned NOT NULL,
+  `rule_id` int(10) unsigned NOT NULL,
+  `gw_id` int(10) unsigned NOT NULL,
+  `priority` tinyint(3) unsigned NOT NULL,
+  `weight` int(10) unsigned NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `rule_id_gw_id_idx` (`rule_id`,`gw_id`) USING BTREE,
+  KEY `lcr_id_idx` (`lcr_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `location` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `ruid` varchar(64) NOT NULL DEFAULT '',
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `domain` varchar(64) DEFAULT NULL,
+  `contact` varchar(512) NOT NULL DEFAULT '',
+  `received` varchar(128) DEFAULT NULL,
+  `path` varchar(512) DEFAULT NULL,
+  `expires` datetime NOT NULL DEFAULT '2030-05-28 21:32:15',
+  `q` float(10,2) NOT NULL DEFAULT 1.00,
+  `callid` varchar(255) NOT NULL DEFAULT 'Default-Call-ID',
+  `cseq` int(11) NOT NULL DEFAULT 1,
+  `last_modified` datetime NOT NULL DEFAULT '2000-01-01 00:00:01',
+  `flags` int(11) NOT NULL DEFAULT 0,
+  `cflags` int(11) NOT NULL DEFAULT 0,
+  `user_agent` varchar(255) NOT NULL DEFAULT '',
+  `socket` varchar(64) DEFAULT NULL,
+  `methods` int(11) DEFAULT NULL,
+  `instance` varchar(255) DEFAULT NULL,
+  `reg_id` int(11) NOT NULL DEFAULT 0,
+  `server_id` int(11) NOT NULL DEFAULT 0,
+  `connection_id` int(11) NOT NULL DEFAULT 0,
+  `keepalive` int(11) NOT NULL DEFAULT 0,
+  `partition` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ruid_idx` (`ruid`),
+  KEY `account_contact_idx` (`username`,`domain`,`contact`),
+  KEY `expires_idx` (`expires`),
+  KEY `tcpcon_idx` (`connection_id`),
+  KEY `connection_idx` (`server_id`,`connection_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `missed_calls` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `method` varchar(16) NOT NULL DEFAULT '',
+  `from_tag` varchar(64) NOT NULL DEFAULT '',
+  `to_tag` varchar(64) NOT NULL DEFAULT '',
+  `callid` varchar(255) NOT NULL DEFAULT '',
+  `sip_code` varchar(3) NOT NULL DEFAULT '',
+  `sip_reason` varchar(128) NOT NULL DEFAULT '',
+  `time` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `callid_idx` (`callid`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mohqcalls` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `mohq_id` int(10) unsigned NOT NULL,
+  `call_id` varchar(100) NOT NULL,
+  `call_status` int(10) unsigned NOT NULL,
+  `call_from` varchar(100) NOT NULL,
+  `call_contact` varchar(100) DEFAULT NULL,
+  `call_time` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `mohqcalls_idx` (`call_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mohqueues` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(25) NOT NULL,
+  `uri` varchar(100) NOT NULL,
+  `mohdir` varchar(100) DEFAULT NULL,
+  `mohfile` varchar(100) NOT NULL,
+  `debug` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `mohqueue_uri_idx` (`uri`) USING BTREE,
+  UNIQUE KEY `mohqueue_name_idx` (`name`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mtree` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `tprefix` varchar(32) NOT NULL DEFAULT '',
+  `tvalue` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `tprefix_idx` (`tprefix`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mtrees` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `tname` varchar(128) NOT NULL DEFAULT '',
+  `tprefix` varchar(32) NOT NULL DEFAULT '',
+  `tvalue` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `tname_tprefix_tvalue_idx` (`tname`,`tprefix`,`tvalue`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `pdt` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `sdomain` varchar(128) NOT NULL,
+  `prefix` varchar(32) NOT NULL,
+  `domain` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `sdomain_prefix_idx` (`sdomain`,`prefix`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `pl_pipes` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `pipeid` varchar(64) NOT NULL DEFAULT '',
+  `algorithm` varchar(32) NOT NULL DEFAULT '',
+  `plimit` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `presentity` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL,
+  `domain` varchar(64) NOT NULL,
+  `event` varchar(64) NOT NULL,
+  `etag` varchar(64) NOT NULL,
+  `expires` int(11) NOT NULL,
+  `received_time` int(11) NOT NULL,
+  `body` blob NOT NULL,
+  `sender` varchar(128) NOT NULL,
+  `priority` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `presentity_idx` (`username`,`domain`,`event`,`etag`) USING BTREE,
+  KEY `presentity_expires` (`expires`) USING BTREE,
+  KEY `account_idx` (`username`,`domain`,`event`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `pua` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `pres_uri` varchar(128) NOT NULL,
+  `pres_id` varchar(255) NOT NULL,
+  `event` int(11) NOT NULL,
+  `expires` int(11) NOT NULL,
+  `desired_expires` int(11) NOT NULL,
+  `flag` int(11) NOT NULL,
+  `etag` varchar(64) NOT NULL,
+  `tuple_id` varchar(64) DEFAULT NULL,
+  `watcher_uri` varchar(128) NOT NULL,
+  `call_id` varchar(255) NOT NULL,
+  `to_tag` varchar(64) NOT NULL,
+  `from_tag` varchar(64) NOT NULL,
+  `cseq` int(11) NOT NULL,
+  `record_route` text DEFAULT NULL,
+  `contact` varchar(128) NOT NULL,
+  `remote_contact` varchar(128) NOT NULL,
+  `version` int(11) NOT NULL,
+  `extra_headers` text NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `pua_idx` (`etag`,`tuple_id`,`call_id`,`from_tag`) USING BTREE,
+  KEY `expires_idx` (`expires`) USING BTREE,
+  KEY `dialog1_idx` (`pres_id`,`pres_uri`) USING BTREE,
+  KEY `dialog2_idx` (`call_id`,`from_tag`) USING BTREE,
+  KEY `record_idx` (`pres_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `purplemap` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `sip_user` varchar(128) NOT NULL,
+  `ext_user` varchar(128) NOT NULL,
+  `ext_prot` varchar(16) NOT NULL,
+  `ext_pass` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `re_grp` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `reg_exp` varchar(128) NOT NULL DEFAULT '',
+  `group_id` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `group_idx` (`group_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `rls_presentity` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `rlsubs_did` varchar(255) NOT NULL,
+  `resource_uri` varchar(128) NOT NULL,
+  `content_type` varchar(255) NOT NULL,
+  `presence_state` blob NOT NULL,
+  `expires` int(11) NOT NULL,
+  `updated` int(11) NOT NULL,
+  `auth_state` int(11) NOT NULL,
+  `reason` varchar(64) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `rls_presentity_idx` (`rlsubs_did`,`resource_uri`) USING BTREE,
+  KEY `rlsubs_idx` (`rlsubs_did`) USING BTREE,
+  KEY `updated_idx` (`updated`) USING BTREE,
+  KEY `expires_idx` (`expires`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `rls_watchers` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `presentity_uri` varchar(128) NOT NULL,
+  `to_user` varchar(64) NOT NULL,
+  `to_domain` varchar(64) NOT NULL,
+  `watcher_username` varchar(64) NOT NULL,
+  `watcher_domain` varchar(64) NOT NULL,
+  `event` varchar(64) NOT NULL DEFAULT 'presence',
+  `event_id` varchar(64) DEFAULT NULL,
+  `to_tag` varchar(64) NOT NULL,
+  `from_tag` varchar(64) NOT NULL,
+  `callid` varchar(255) NOT NULL,
+  `local_cseq` int(11) NOT NULL,
+  `remote_cseq` int(11) NOT NULL,
+  `contact` varchar(128) NOT NULL,
+  `record_route` text DEFAULT NULL,
+  `expires` int(11) NOT NULL,
+  `status` int(11) NOT NULL DEFAULT 2,
+  `reason` varchar(64) NOT NULL,
+  `version` int(11) NOT NULL DEFAULT 0,
+  `socket_info` varchar(64) NOT NULL,
+  `local_contact` varchar(128) NOT NULL,
+  `from_user` varchar(64) NOT NULL,
+  `from_domain` varchar(64) NOT NULL,
+  `updated` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `rls_watcher_idx` (`callid`,`to_tag`,`from_tag`) USING BTREE,
+  KEY `rls_watchers_update` (`watcher_username`,`watcher_domain`,`event`) USING BTREE,
+  KEY `rls_watchers_expires` (`expires`) USING BTREE,
+  KEY `updated_idx` (`updated`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `rtpproxy` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `setid` varchar(32) NOT NULL DEFAULT '0',
+  `url` varchar(64) NOT NULL DEFAULT '',
+  `flags` int(11) NOT NULL DEFAULT 0,
+  `weight` int(11) NOT NULL DEFAULT 1,
+  `description` varchar(64) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sca_subscriptions` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `subscriber` varchar(255) NOT NULL,
+  `aor` varchar(255) NOT NULL,
+  `event` int(11) NOT NULL DEFAULT 0,
+  `expires` int(11) NOT NULL DEFAULT 0,
+  `state` int(11) NOT NULL DEFAULT 0,
+  `app_idx` int(11) NOT NULL DEFAULT 0,
+  `call_id` varchar(255) NOT NULL,
+  `from_tag` varchar(64) NOT NULL,
+  `to_tag` varchar(64) NOT NULL,
+  `record_route` text DEFAULT NULL,
+  `notify_cseq` int(11) NOT NULL,
+  `subscribe_cseq` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `sca_subscriptions_idx` (`subscriber`,`call_id`,`from_tag`,`to_tag`) USING BTREE,
+  KEY `sca_expires_idx` (`expires`) USING BTREE,
+  KEY `sca_subscribers_idx` (`subscriber`,`event`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `silo` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `src_addr` varchar(128) NOT NULL DEFAULT '',
+  `dst_addr` varchar(128) NOT NULL DEFAULT '',
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `domain` varchar(64) NOT NULL DEFAULT '',
+  `inc_time` int(11) NOT NULL DEFAULT 0,
+  `exp_time` int(11) NOT NULL DEFAULT 0,
+  `snd_time` int(11) NOT NULL DEFAULT 0,
+  `ctype` varchar(32) NOT NULL DEFAULT 'text/plain',
+  `body` blob DEFAULT NULL,
+  `extra_hdrs` text DEFAULT NULL,
+  `callid` varchar(128) NOT NULL DEFAULT '',
+  `status` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `account_idx` (`username`,`domain`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sip_trace` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `time_stamp` datetime NOT NULL DEFAULT '1900-01-01 00:00:01',
+  `time_us` int(10) unsigned NOT NULL DEFAULT 0,
+  `callid` varchar(255) NOT NULL DEFAULT '',
+  `traced_user` varchar(128) NOT NULL DEFAULT '',
+  `msg` mediumtext NOT NULL,
+  `method` varchar(50) NOT NULL DEFAULT '',
+  `status` varchar(128) NOT NULL DEFAULT '',
+  `fromip` varchar(50) NOT NULL DEFAULT '',
+  `toip` varchar(50) NOT NULL DEFAULT '',
+  `fromtag` varchar(64) NOT NULL DEFAULT '',
+  `totag` varchar(64) NOT NULL DEFAULT '',
+  `direction` varchar(4) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `traced_user_idx` (`traced_user`) USING BTREE,
+  KEY `date_idx` (`time_stamp`) USING BTREE,
+  KEY `fromip_idx` (`fromip`) USING BTREE,
+  KEY `callid_idx` (`callid`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `speed_dial` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `domain` varchar(64) NOT NULL DEFAULT '',
+  `sd_username` varchar(64) NOT NULL DEFAULT '',
+  `sd_domain` varchar(64) NOT NULL DEFAULT '',
+  `new_uri` varchar(128) NOT NULL DEFAULT '',
+  `fname` varchar(64) NOT NULL DEFAULT '',
+  `lname` varchar(64) NOT NULL DEFAULT '',
+  `description` varchar(64) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `speed_dial_idx` (`username`,`domain`,`sd_domain`,`sd_username`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8mb4;
+/*!50001 CREATE VIEW `subscriber` AS SELECT
+ 1 AS `id`,
+  1 AS `username`,
+  1 AS `domain`,
+  1 AS `password`,
+  1 AS `email_address`,
+  1 AS `ha1`,
+  1 AS `ha1b`,
+  1 AS `rpid` */;
+SET character_set_client = @saved_cs_client;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `subscriber_orig_unused` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `domain` varchar(64) NOT NULL DEFAULT '',
+  `password` varchar(25) NOT NULL DEFAULT '',
+  `email_address` varchar(64) NOT NULL DEFAULT '',
+  `ha1` varchar(64) NOT NULL DEFAULT '',
+  `ha1b` varchar(64) NOT NULL DEFAULT '',
+  `rpid` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `account_idx` (`username`,`domain`) USING BTREE,
+  KEY `username_idx` (`username`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `topos_d` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `rectime` datetime NOT NULL,
+  `s_method` varchar(64) NOT NULL DEFAULT '',
+  `s_cseq` varchar(64) NOT NULL DEFAULT '',
+  `a_callid` varchar(255) NOT NULL DEFAULT '',
+  `a_uuid` varchar(255) NOT NULL DEFAULT '',
+  `b_uuid` varchar(255) NOT NULL DEFAULT '',
+  `a_contact` varchar(128) NOT NULL DEFAULT '',
+  `b_contact` varchar(128) NOT NULL DEFAULT '',
+  `as_contact` varchar(128) NOT NULL DEFAULT '',
+  `bs_contact` varchar(128) NOT NULL DEFAULT '',
+  `a_tag` varchar(255) NOT NULL DEFAULT '',
+  `b_tag` varchar(255) NOT NULL DEFAULT '',
+  `a_rr` mediumtext DEFAULT NULL,
+  `b_rr` mediumtext DEFAULT NULL,
+  `s_rr` mediumtext DEFAULT NULL,
+  `iflags` int(10) unsigned NOT NULL DEFAULT 0,
+  `a_uri` varchar(128) NOT NULL DEFAULT '',
+  `b_uri` varchar(128) NOT NULL DEFAULT '',
+  `r_uri` varchar(128) NOT NULL DEFAULT '',
+  `a_srcaddr` varchar(128) NOT NULL DEFAULT '',
+  `b_srcaddr` varchar(128) NOT NULL DEFAULT '',
+  `a_socket` varchar(128) NOT NULL DEFAULT '',
+  `b_socket` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `rectime_idx` (`rectime`) USING BTREE,
+  KEY `a_callid_idx` (`a_callid`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `topos_t` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `rectime` datetime NOT NULL,
+  `s_method` varchar(64) NOT NULL DEFAULT '',
+  `s_cseq` varchar(64) NOT NULL DEFAULT '',
+  `a_callid` varchar(255) NOT NULL DEFAULT '',
+  `a_uuid` varchar(255) NOT NULL DEFAULT '',
+  `b_uuid` varchar(255) NOT NULL DEFAULT '',
+  `direction` int(11) NOT NULL DEFAULT 0,
+  `x_via` mediumtext DEFAULT NULL,
+  `x_vbranch` varchar(255) NOT NULL DEFAULT '',
+  `x_rr` mediumtext DEFAULT NULL,
+  `y_rr` mediumtext DEFAULT NULL,
+  `s_rr` mediumtext DEFAULT NULL,
+  `x_uri` varchar(128) NOT NULL DEFAULT '',
+  `a_contact` varchar(128) NOT NULL DEFAULT '',
+  `b_contact` varchar(128) NOT NULL DEFAULT '',
+  `as_contact` varchar(128) NOT NULL DEFAULT '',
+  `bs_contact` varchar(128) NOT NULL DEFAULT '',
+  `x_tag` varchar(255) NOT NULL DEFAULT '',
+  `a_tag` varchar(255) NOT NULL DEFAULT '',
+  `b_tag` varchar(255) NOT NULL DEFAULT '',
+  `a_srcaddr` varchar(128) NOT NULL DEFAULT '',
+  `b_srcaddr` varchar(128) NOT NULL DEFAULT '',
+  `a_socket` varchar(128) NOT NULL DEFAULT '',
+  `b_socket` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `rectime_idx` (`rectime`) USING BTREE,
+  KEY `a_callid_idx` (`a_callid`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `trusted` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `src_ip` varchar(50) NOT NULL,
+  `proto` varchar(4) NOT NULL,
+  `from_pattern` varchar(64) DEFAULT NULL,
+  `ruri_pattern` varchar(64) DEFAULT NULL,
+  `tag` varchar(64) DEFAULT NULL,
+  `priority` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `peer_idx` (`src_ip`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `uacreg` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `l_uuid` varchar(64) NOT NULL DEFAULT '',
+  `l_username` varchar(64) NOT NULL DEFAULT '',
+  `l_domain` varchar(128) NOT NULL DEFAULT '',
+  `r_username` varchar(64) NOT NULL DEFAULT '',
+  `r_domain` varchar(128) NOT NULL DEFAULT '',
+  `realm` varchar(64) NOT NULL DEFAULT '',
+  `auth_username` varchar(64) NOT NULL DEFAULT '',
+  `auth_password` varchar(64) NOT NULL DEFAULT '',
+  `auth_proxy` varchar(64) NOT NULL DEFAULT '',
+  `expires` int(11) NOT NULL DEFAULT 0,
+  `flags` int(11) NOT NULL DEFAULT 0,
+  `reg_delay` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `l_uuid_idx` (`l_uuid`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `uid_credentials` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `auth_username` varchar(64) NOT NULL,
+  `did` varchar(64) NOT NULL DEFAULT '_default',
+  `realm` varchar(64) NOT NULL,
+  `password` varchar(28) NOT NULL DEFAULT '',
+  `flags` int(11) NOT NULL DEFAULT 0,
+  `ha1` varchar(32) NOT NULL,
+  `ha1b` varchar(32) NOT NULL DEFAULT '',
+  `uid` varchar(64) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `cred_idx` (`auth_username`,`did`) USING BTREE,
+  KEY `uid` (`uid`) USING BTREE,
+  KEY `did_idx` (`did`) USING BTREE,
+  KEY `realm_idx` (`realm`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `uid_domain` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `did` varchar(64) NOT NULL,
+  `domain` varchar(64) NOT NULL,
+  `flags` int(10) unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `domain_idx` (`domain`) USING BTREE,
+  KEY `did_idx` (`did`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `uid_domain_attrs` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `did` varchar(64) DEFAULT NULL,
+  `name` varchar(32) NOT NULL,
+  `type` int(11) NOT NULL DEFAULT 0,
+  `value` varchar(128) DEFAULT NULL,
+  `flags` int(10) unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `domain_attr_idx` (`did`,`name`,`value`) USING BTREE,
+  KEY `domain_did` (`did`,`flags`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `uid_global_attrs` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(32) NOT NULL,
+  `type` int(11) NOT NULL DEFAULT 0,
+  `value` varchar(128) DEFAULT NULL,
+  `flags` int(10) unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `global_attrs_idx` (`name`,`value`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `uid_uri` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `uid` varchar(64) NOT NULL,
+  `did` varchar(64) NOT NULL,
+  `username` varchar(64) NOT NULL,
+  `flags` int(10) unsigned NOT NULL DEFAULT 0,
+  `scheme` varchar(8) NOT NULL DEFAULT 'sip',
+  PRIMARY KEY (`id`),
+  KEY `uri_idx1` (`username`,`did`,`scheme`) USING BTREE,
+  KEY `uri_uid` (`uid`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `uid_uri_attrs` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL,
+  `did` varchar(64) NOT NULL,
+  `name` varchar(32) NOT NULL,
+  `value` varchar(128) DEFAULT NULL,
+  `type` int(11) NOT NULL DEFAULT 0,
+  `flags` int(10) unsigned NOT NULL DEFAULT 0,
+  `scheme` varchar(8) NOT NULL DEFAULT 'sip',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uriattrs_idx` (`username`,`did`,`name`,`value`,`scheme`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `uid_user_attrs` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `uid` varchar(64) NOT NULL,
+  `name` varchar(32) NOT NULL,
+  `value` varchar(128) DEFAULT NULL,
+  `type` int(11) NOT NULL DEFAULT 0,
+  `flags` int(10) unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `userattrs_idx` (`uid`,`name`,`value`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `uri` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `domain` varchar(64) NOT NULL DEFAULT '',
+  `uri_user` varchar(64) NOT NULL DEFAULT '',
+  `last_modified` datetime NOT NULL DEFAULT '2000-01-01 00:00:01',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `account_idx` (`username`,`domain`,`uri_user`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `userblacklist` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `domain` varchar(64) NOT NULL DEFAULT '',
+  `prefix` varchar(64) NOT NULL DEFAULT '',
+  `whitelist` tinyint(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `userblacklist_idx` (`username`,`domain`,`prefix`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `usr_preferences` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(64) NOT NULL DEFAULT '',
+  `username` varchar(128) NOT NULL DEFAULT '0',
+  `domain` varchar(64) NOT NULL DEFAULT '',
+  `attribute` varchar(32) NOT NULL DEFAULT '',
+  `type` int(11) NOT NULL DEFAULT 0,
+  `value` varchar(128) NOT NULL DEFAULT '',
+  `last_modified` datetime NOT NULL DEFAULT '2000-01-01 00:00:01',
+  PRIMARY KEY (`id`),
+  KEY `ua_idx` (`uuid`,`attribute`) USING BTREE,
+  KEY `uda_idx` (`username`,`domain`,`attribute`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `version` (
+  `table_name` varchar(32) NOT NULL,
+  `table_version` int(10) unsigned NOT NULL DEFAULT 0,
+  UNIQUE KEY `table_name_idx` (`table_name`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `watchers` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `presentity_uri` varchar(128) NOT NULL,
+  `watcher_username` varchar(64) NOT NULL,
+  `watcher_domain` varchar(64) NOT NULL,
+  `event` varchar(64) NOT NULL DEFAULT 'presence',
+  `status` int(11) NOT NULL,
+  `reason` varchar(64) DEFAULT NULL,
+  `inserted_time` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `watcher_idx` (`presentity_uri`,`watcher_username`,`watcher_domain`,`event`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `xcap` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(64) NOT NULL,
+  `domain` varchar(64) NOT NULL,
+  `doc` mediumblob NOT NULL,
+  `doc_type` int(11) NOT NULL,
+  `etag` varchar(64) NOT NULL,
+  `source` int(11) NOT NULL,
+  `doc_uri` varchar(255) NOT NULL,
+  `port` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `doc_uri_idx` (`doc_uri`) USING BTREE,
+  KEY `account_doc_type_idx` (`username`,`domain`,`doc_type`) USING BTREE,
+  KEY `account_doc_type_uri_idx` (`username`,`domain`,`doc_type`,`doc_uri`) USING BTREE,
+  KEY `account_doc_uri_idx` (`username`,`domain`,`doc_uri`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!50001 DROP VIEW IF EXISTS `subscriber`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_uca1400_ai_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 SQL SECURITY INVOKER */
+/*!50001 VIEW `subscriber` AS select `a`.`id` AS `id`,`a`.`username` AS `username`,'__DOMAIN__' AS `domain`,`a`.`secret` AS `password`,'' AS `email_address`,'' AS `ha1`,'' AS `ha1b`,NULL AS `rpid` from `switch`.`customer_sip_account` `a` where `a`.`status` = '1' */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*M!100616 SET NOTE_VERBOSITY=@OLD_NOTE_VERBOSITY */;
+

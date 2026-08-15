@@ -1,0 +1,17 @@
+# Never commit secrets or runtime state
+portal/.env
+portal/.env.*
+!portal/.env.example
+portal/vendor/
+portal/node_modules/
+portal/storage/logs/*
+portal/storage/framework/cache/*
+portal/storage/framework/sessions/*
+portal/storage/framework/views/*
+portal/bootstrap/cache/*
+!**/.gitkeep
+*.log
+*.bak
+.DS_Store
+# scratch / staging
+_srvstage/

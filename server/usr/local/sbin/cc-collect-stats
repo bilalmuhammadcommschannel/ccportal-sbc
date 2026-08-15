@@ -1,0 +1,70 @@
+#!/bin/bash
+# Collects operational + security stats as ROOT and writes a JSON snapshot the
+# portal (www-data) can read. Deliberate design: the web process never gets
+# fail2ban/fs_cli privileges — it only reads a file.
+set -u
+OUT=/var/lib/ccportal/stats.json
+TMP=$(mktemp)
+
+json_escape(){ printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# --- fail2ban ---
+jails_json=""
+tot_banned=0; tot_failed=0; cur_banned=0
+for j in $(fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:\s*//p' | tr ',' ' '); do
+  s=$(fail2ban-client status "$j" 2>/dev/null)
+  cf=$(printf '%s' "$s" | sed -n 's/.*Currently failed:\s*\([0-9]*\).*/\1/p' | head -1)
+  tf=$(printf '%s' "$s" | sed -n 's/.*Total failed:\s*\([0-9]*\).*/\1/p' | head -1)
+  cb=$(printf '%s' "$s" | sed -n 's/.*Currently banned:\s*\([0-9]*\).*/\1/p' | head -1)
+  tb=$(printf '%s' "$s" | sed -n 's/.*Total banned:\s*\([0-9]*\).*/\1/p' | head -1)
+  ips=$(fail2ban-client get "$j" banip 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+  cf=${cf:-0}; tf=${tf:-0}; cb=${cb:-0}; tb=${tb:-0}
+  tot_banned=$((tot_banned+tb)); tot_failed=$((tot_failed+tf)); cur_banned=$((cur_banned+cb))
+  [ -n "$jails_json" ] && jails_json="$jails_json,"
+  jails_json="$jails_json{\"name\":\"$(json_escape "$j")\",\"currently_failed\":$cf,\"total_failed\":$tf,\"currently_banned\":$cb,\"total_banned\":$tb,\"banned_ips\":\"$(json_escape "$ips")\"}"
+done
+
+# --- freeswitch live calls ---
+fs_up=0; fs_calls=0; fs_channels=0; fs_chan_json="[]"
+if systemctl is-active --quiet freeswitch; then
+  fs_up=1
+  fs_calls=$(fs_cli -x "show calls count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
+  fs_channels=$(fs_cli -x "show channels count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
+  fs_calls=${fs_calls:-0}; fs_channels=${fs_channels:-0}
+  # per-channel detail (name,cid_num,dest,duration) as JSON
+  # column order from `show channels as delim |` header:
+  #  1 uuid | 2 direction | 5 name | 6 state | 7 cid_name | 8 cid_num | 10 dest
+  # 18 write_codec | 26 callstate | 28 callee_num
+  rows=$(fs_cli -x "show channels as delim |" 2>/dev/null | awk -F'|' '
+    NR>1 && NF>20 {
+      gsub(/"/,"",$0);
+      printf "{\"uuid\":\"%s\",\"direction\":\"%s\",\"name\":\"%s\",\"cid\":\"%s\",\"dest\":\"%s\",\"state\":\"%s\",\"codec\":\"%s\"},", $1,$2,$5,$8,$10,$26,$18
+    }' | sed 's/,$//')
+  [ -n "$rows" ] && fs_chan_json="[$rows]"
+fi
+
+# --- services ---
+svc_json=""
+for s in nginx php8.3-fpm mariadb fail2ban freeswitch kamailio nftables ccportal-scheduler.timer certbot.timer; do
+  st=$(systemctl is-active "$s" 2>/dev/null || echo unknown)
+  [ -n "$svc_json" ] && svc_json="$svc_json,"
+  svc_json="$svc_json{\"name\":\"$(json_escape "$s")\",\"state\":\"$(json_escape "$st")\"}"
+done
+
+# --- host ---
+load=$(cut -d' ' -f1 /proc/loadavg)
+memtot=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
+memav=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
+disk=$(df -P / | awk 'NR==2{print $5}' | tr -d '%')
+up=$(awk '{print int($1)}' /proc/uptime)
+
+cat > "$TMP" <<JSON
+{
+  "generated_at": "$(date -u '+%Y-%m-%d %H:%M:%S')",
+  "fail2ban": { "jails": [$jails_json], "currently_banned": $cur_banned, "total_banned": $tot_banned, "total_failed": $tot_failed },
+  "freeswitch": { "up": $fs_up, "calls": $fs_calls, "channels": $fs_channels, "channel_list": $fs_chan_json },
+  "services": [$svc_json],
+  "host": { "load": "$load", "mem_total_mb": $memtot, "mem_available_mb": $memav, "disk_used_pct": ${disk:-0}, "uptime_sec": $up }
+}
+JSON
+chmod 644 "$TMP" && mv "$TMP" "$OUT"

@@ -1,0 +1,9 @@
+<configuration name="xml_cdr.conf" description="XML CDR">
+  <settings>
+    <param name="url" value="http://127.0.0.1:8080/switch/cdr"/>
+    <param name="encode" value="false"/>
+    <param name="retries" value="2"/>
+    <param name="delay" value="1"/>
+    <param name="log-b-leg" value="true"/>
+  </settings>
+</configuration>
