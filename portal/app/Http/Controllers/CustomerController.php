@@ -18,16 +18,19 @@ class CustomerController extends Controller
         $this->authorize('viewAny', Account::class);
         $user = $request->user();
         $q = trim((string) $request->query('q', ''));
+        // default view is active-only; 'all' shows every status (incl. Closed/Inactive)
+        $status = $request->query('status') === 'all' ? 'all' : 'active';
 
         $customers = Account::query()
             ->where('account_type', 'CUSTOMER')
             ->with(['customerRow', 'balance'])
             ->when(! $user->isAdmin(), fn ($x) => $x->whereIn('account_id', $user->accessibleAccountIds()))
+            ->when($status === 'active', fn ($x) => $x->where('status_id', '1'))
             ->when($q !== '', fn ($x) => $x->where('account_id', 'like', "%{$q}%"))
             ->orderBy('account_id')
             ->paginate(25)->withQueryString();
 
-        return view('customers.index', compact('customers', 'q'));
+        return view('customers.index', compact('customers', 'q', 'status'));
     }
 
     public function create()

@@ -3,7 +3,16 @@
 @section('content')
     <div class="rowbar"><h1 style="margin:0">Customers</h1>@can('create',App\Models\Ov500\Account::class)<a class="btn" href="{{ route('customers.create') }}">+ New customer</a>@endcan</div>
     <div class="card">
-        <form method="GET" style="margin-bottom:16px;display:flex;gap:10px;max-width:420px"><input type="text" name="q" value="{{ $q }}" placeholder="Search account ID"><button class="btn ghost sm">Search</button></form>
+        <div style="margin-bottom:16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <form method="GET" style="display:flex;gap:10px;max-width:420px">
+                <input type="hidden" name="status" value="{{ $status }}">
+                <input type="text" name="q" value="{{ $q }}" placeholder="Search account ID"><button class="btn ghost sm">Search</button>
+            </form>
+            <div class="tabs" style="display:flex;gap:6px">
+                <a class="btn sm {{ $status === 'active' ? '' : 'ghost' }}" href="{{ route('customers.index', ['status' => 'active', 'q' => $q]) }}">Active</a>
+                <a class="btn sm {{ $status === 'all' ? '' : 'ghost' }}" href="{{ route('customers.index', ['status' => 'all', 'q' => $q]) }}">All</a>
+            </div>
+        </div>
         <table>
             <thead><tr><th>Company</th><th>Account</th><th>Billing</th><th class="right">Balance</th><th>Status</th><th></th></tr></thead>
             <tbody>
