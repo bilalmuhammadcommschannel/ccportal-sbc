@@ -23,7 +23,7 @@
             <tr><th>Tariff</th><td>{{ optional($tariff)->tariff_id ?? '— none —' }}</td></tr>
             <tr><th>Balance</th><td><a href="{{ route('balances.show',$customer) }}">{{ number_format((float) optional($customer->balance)->balance, 4) }}</a></td></tr>
             <tr><th>Endpoints / DIDs</th><td>{{ $endpoints }} / {{ $dids }}</td></tr>
-            <tr><th>Status</th><td>@if((string)$customer->status_id==='1')<span class="pill on">Active</span>@else<span class="pill off">{{ $customer->status_id }}</span>@endif</td></tr>
+            <tr><th>Status</th><td><span class="pill {{ $customer->status_pill }}">{{ $customer->status_label }}</span></td></tr>
         </table>
     </div>
 @endsection

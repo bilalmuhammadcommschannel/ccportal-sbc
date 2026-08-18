@@ -13,7 +13,7 @@
                     <td class="muted">{{ $r->account_id }}</td>
                     <td class="muted">{{ $r->parent_account_id }}</td>
                     <td class="right">{{ number_format((float) optional($r->balance)->balance, 2) }}</td>
-                    <td>@if((string)$r->status_id==='1')<span class="pill on">Active</span>@else<span class="pill off">{{ $r->status_id }}</span>@endif</td>
+                    <td><span class="pill {{ $r->status_pill }}">{{ $r->status_label }}</span></td>
                     <td class="right"><a class="btn ghost sm" href="{{ route('resellers.edit',$r) }}">Edit</a></td>
                 </tr>
             @empty<tr><td colspan="6" class="muted">No resellers.</td></tr>@endforelse

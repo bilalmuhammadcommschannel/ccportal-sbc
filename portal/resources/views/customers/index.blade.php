@@ -13,7 +13,7 @@
                     <td class="muted">{{ $c->account_id }}</td>
                     <td>{{ optional($c->customerRow)->billing_type ?? '—' }}</td>
                     <td class="right">{{ number_format((float) optional($c->balance)->balance, 2) }}</td>
-                    <td>@if((string)$c->status_id==='1')<span class="pill on">Active</span>@else<span class="pill off">{{ $c->status_id }}</span>@endif</td>
+                    <td><span class="pill {{ $c->status_pill }}">{{ $c->status_label }}</span></td>
                     <td class="right"><a class="btn ghost sm" href="{{ route('customers.edit',$c) }}">Edit</a></td>
                 </tr>
             @empty<tr><td colspan="6" class="muted">No customers.</td></tr>@endforelse

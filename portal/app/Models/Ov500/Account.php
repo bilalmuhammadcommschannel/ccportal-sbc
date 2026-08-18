@@ -48,4 +48,21 @@ class Account extends Model
 
         return $name ? "{$name} ({$this->account_id})" : $this->account_id;
     }
+
+    /** Human label for the OV500 status_id code shown in the UI. */
+    public function getStatusLabelAttribute(): string
+    {
+        return match ((string) $this->status_id) {
+            '1'  => 'Active',
+            '0'  => 'Inactive',
+            '-3' => 'Closed',
+            default => 'Unknown (' . $this->status_id . ')',
+        };
+    }
+
+    /** CSS pill class: green only when active. */
+    public function getStatusPillAttribute(): string
+    {
+        return (string) $this->status_id === '1' ? 'on' : 'off';
+    }
 }
