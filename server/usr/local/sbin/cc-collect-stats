@@ -1,4 +1,5 @@
 #!/bin/bash
+ESLPW=$(grep -oE 'value="[a-f0-9]{40}"' /etc/freeswitch/autoload_configs/event_socket.conf.xml 2>/dev/null | grep -oE '[a-f0-9]{40}' | head -1)
 # Collects operational + security stats as ROOT and writes a JSON snapshot the
 # portal (www-data) can read. Deliberate design: the web process never gets
 # fail2ban/fs_cli privileges — it only reads a file.
@@ -28,14 +29,14 @@ done
 fs_up=0; fs_calls=0; fs_channels=0; fs_chan_json="[]"
 if systemctl is-active --quiet freeswitch; then
   fs_up=1
-  fs_calls=$(fs_cli -x "show calls count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
-  fs_channels=$(fs_cli -x "show channels count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
+  fs_calls=$(fs_cli -p "$ESLPW" -x "show calls count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
+  fs_channels=$(fs_cli -p "$ESLPW" -x "show channels count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
   fs_calls=${fs_calls:-0}; fs_channels=${fs_channels:-0}
   # per-channel detail (name,cid_num,dest,duration) as JSON
   # column order from `show channels as delim |` header:
   #  1 uuid | 2 direction | 5 name | 6 state | 7 cid_name | 8 cid_num | 10 dest
   # 18 write_codec | 26 callstate | 28 callee_num
-  rows=$(fs_cli -x "show channels as delim |" 2>/dev/null | awk -F'|' '
+  rows=$(fs_cli -p "$ESLPW" -x "show channels as delim |" 2>/dev/null | awk -F'|' '
     NR>1 && NF>20 {
       gsub(/"/,"",$0);
       printf "{\"uuid\":\"%s\",\"direction\":\"%s\",\"name\":\"%s\",\"cid\":\"%s\",\"dest\":\"%s\",\"state\":\"%s\",\"codec\":\"%s\"},", $1,$2,$5,$8,$10,$26,$18

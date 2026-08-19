@@ -66,6 +66,7 @@ class CarrierController extends Controller
             $carrier->save();
 
             $this->syncIps($carrier, $data['ips'], $actor, $request);
+            $this->syncPrefix($carrier, $data['dial'], $actor);
 
             return $carrier;
         });
@@ -88,10 +89,17 @@ class CarrierController extends Controller
         $this->authorize('update', $carrier);
         $carrier->load('ips');
 
+        $pfx = DB::connection('switch')->table('carrier_prefix')
+            ->where('carrier_id', $carrier->carrier_id)->where('route', 'OUTBOUND')->first();
+        $prepend = ($pfx && $pfx->add_string !== '%') ? (string) $pfx->add_string : '';
+        $strip   = ($pfx && $pfx->remove_string !== '%') ? (string) $pfx->remove_string : '';
+
         return view('carriers.form', [
             'carrier' => $carrier,
             'ips'     => $carrier->ips->isNotEmpty() ? $carrier->ips : collect([new CarrierIp(['auth_type' => 'IP'])]),
             'tariffs' => $this->tariffOptions(),
+            'prepend' => $prepend,
+            'strip'   => $strip,
             'mode'    => 'edit',
         ]);
     }
@@ -110,6 +118,7 @@ class CarrierController extends Controller
             $carrier->save();
 
             $this->syncIps($carrier, $data['ips'], $actor, $request);
+            $this->syncPrefix($carrier, $data['dial'], $actor);
         });
 
         return redirect()
@@ -140,6 +149,11 @@ class CarrierController extends Controller
             'cli_prefer'     => ['required', Rule::in(['rpid', 'pid', 'no'])],
             'carrier_codecs' => ['nullable', 'string', 'max:50'],
             'tax_type'       => ['required', Rule::in(['inclusive', 'exclusive'])],
+            // Outbound digit manipulation applied to the dialled number before it
+            // is sent to this carrier: strip a leading prefix, then prepend one.
+            // e.g. prepend "+" so numbers go to Twilio as +E.164.
+            'out_prepend'    => ['nullable', 'string', 'max:16', 'regex:/^[0-9+*#]*$/'],
+            'out_strip'      => ['nullable', 'string', 'max:16', 'regex:/^[0-9]*$/'],
 
             'ips'                    => ['required', 'array', 'min:1', 'max:20'],
             'ips.*.ipaddress_name'   => ['required', 'string', 'max:30'],
@@ -173,7 +187,32 @@ class CarrierController extends Controller
                 'tax_type'       => $validated['tax_type'],
             ],
             'ips' => $validated['ips'],
+            'dial' => [
+                'prepend' => $validated['out_prepend'] ?? '',
+                'strip'   => $validated['out_strip'] ?? '',
+            ],
         ];
+    }
+
+    /**
+     * Upsert the carrier's OUTBOUND digit-manipulation rule (a single catch-all
+     * `%` rule): strip a leading prefix and/or prepend one on the dialled number.
+     * Empty fields store the '%' no-op sentinel (applyDigitManip treats it as none).
+     */
+    private function syncPrefix(Carrier $carrier, array $dial, string $actor): void
+    {
+        $prepend = trim((string) ($dial['prepend'] ?? ''));
+        $strip   = trim((string) ($dial['strip'] ?? ''));
+        DB::connection('switch')->table('carrier_prefix')->updateOrInsert(
+            ['carrier_id' => $carrier->carrier_id, 'route' => 'OUTBOUND', 'maching_string' => '%'],
+            [
+                'remove_string'  => $strip !== '' ? $strip : '%',
+                'add_string'     => $prepend !== '' ? $prepend : '%',
+                'display_string' => '%=>' . ($strip !== '' ? "(-{$strip})" : '') . ($prepend !== '' ? $prepend : '') . '%',
+                'updated_by'     => $actor,
+                'updated_dt'     => now(),
+            ]
+        );
     }
 
     /**

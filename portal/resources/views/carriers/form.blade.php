@@ -90,6 +90,15 @@
         </div>
 
         <div class="card">
+            <h2>Outbound dialing (digit manipulation)</h2>
+            <p class="muted" style="margin-top:-6px">Applied to the dialled number before it is sent to this carrier: first <strong>strip</strong> a leading prefix, then <strong>prepend</strong>. Example: prepend <code>+</code> so numbers reach Twilio as <code>+E.164</code>. Leave blank for no change.</p>
+            <div class="grid">
+                <div class="field"><label>Strip leading (digits)</label><input name="out_strip" value="{{ old('out_strip', $strip ?? '') }}" placeholder="e.g. 0"></div>
+                <div class="field"><label>Prepend</label><input name="out_prepend" value="{{ old('out_prepend', $prepend ?? '') }}" placeholder="e.g. + or 61"></div>
+            </div>
+        </div>
+
+        <div class="card">
             <h2>Signalling endpoints</h2>
             <p class="muted" style="margin-top:-6px">Auth type <strong>IP</strong> = the carrier trusts our source IP. <strong>CUSTOMER</strong> = SIP credential auth; username &amp; password required. Leave the last (blank) row empty if not needed.</p>
             @foreach($rows as $i => $r)
