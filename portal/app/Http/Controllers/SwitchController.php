@@ -546,7 +546,7 @@ class SwitchController extends Controller
   <section name="dialplan">
     <context name="default">
       <extension name="cc_inbound">
-        <condition field="destination_number" expression="^{$didE}$">
+        <condition field="destination_number" expression="^\+?{$didE}$">
           {$varsXml}
         </condition>
       </extension>
@@ -645,7 +645,7 @@ XML;
   <section name="dialplan">
     <context name="default">
       <extension name="cc_outbound">
-        <condition field="destination_number" expression="^{$e($origDest)}$">
+        <condition field="destination_number" expression="^\+?{$e($origDest)}$">
           $varsXml
           <action application="bridge" data="$directBridge"/>
         </condition>
