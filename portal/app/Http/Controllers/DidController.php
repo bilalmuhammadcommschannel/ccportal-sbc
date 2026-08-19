@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Ov500\Account;
 use App\Models\Ov500\Did;
 use App\Models\Ov500\DidDestination;
+use App\Models\Ov500\SipAccount;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -106,7 +107,13 @@ class DidController extends Controller
         $accounts = Account::query()
             ->when(! $user->isAdmin(), fn ($x) => $x->whereIn('account_id', $user->accessibleAccountIds()))
             ->orderBy('account_id')->limit(500)->get();
-        return view('dids.edit', compact('did', 'accounts'));
+        // endpoints per account (for the routing-destination picker): choosing an
+        // account reveals that customer's SIP usernames as selectable routing targets.
+        $endpointsByAccount = SipAccount::query()
+            ->when(! $user->isAdmin(), fn ($x) => $x->whereIn('account_id', $user->accessibleAccountIds()))
+            ->orderBy('username')->get(['username', 'account_id'])
+            ->groupBy('account_id')->map(fn ($g) => $g->pluck('username')->values())->toArray();
+        return view('dids.edit', compact('did', 'accounts', 'endpointsByAccount'));
     }
 
     /** Assign to an account + set channels/name/routing destination. */
