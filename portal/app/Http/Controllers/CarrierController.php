@@ -143,7 +143,16 @@ class CarrierController extends Controller
 
             'ips'                    => ['required', 'array', 'min:1', 'max:20'],
             'ips.*.ipaddress_name'   => ['required', 'string', 'max:30'],
-            'ips.*.ipaddress'        => ['required', 'ip'],
+            // Accept an IP OR a hostname/FQDN — carriers like Twilio only give a
+            // termination domain (e.g. pstn.sydney.twilio.com), never a static IP.
+            'ips.*.ipaddress'        => ['required', 'string', 'max:255', function ($attr, $value, $fail) {
+                $v = trim((string) $value);
+                $isIp   = filter_var($v, FILTER_VALIDATE_IP) !== false;
+                $isHost = (bool) preg_match('/^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/', $v);
+                if (! $isIp && ! $isHost) {
+                    $fail('The endpoint address must be a valid IP or hostname (e.g. 203.0.113.5 or pstn.example.com).');
+                }
+            }],
             'ips.*.auth_type'        => ['required', Rule::in(['IP', 'CUSTOMER'])],
             'ips.*.username'         => ['nullable', 'required_if:ips.*.auth_type,CUSTOMER', 'string', 'max:50'],
             'ips.*.passwd'           => ['nullable', 'required_if:ips.*.auth_type,CUSTOMER', 'string', 'max:50'],
