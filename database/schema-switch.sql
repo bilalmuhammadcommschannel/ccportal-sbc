@@ -573,7 +573,7 @@ CREATE TABLE `carrier_ips` (
   `carrier_ip_id` varchar(30) DEFAULT NULL,
   `carrier_id` varchar(30) DEFAULT NULL,
   `ipaddress_name` varchar(30) NOT NULL,
-  `ipaddress` varchar(30) DEFAULT NULL,
+  `ipaddress` varchar(255) DEFAULT NULL,
   `load_share` int(11) NOT NULL DEFAULT 100,
   `priority` smallint(6) DEFAULT 1,
   `ip_status` enum('1','0') DEFAULT '1',
