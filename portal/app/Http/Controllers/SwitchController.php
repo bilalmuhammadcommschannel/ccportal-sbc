@@ -51,6 +51,13 @@ class SwitchController extends Controller
         // stable per-call billing key (falls back to a generated one if FS sent none)
         $callKey     = $uuid !== '' ? $uuid : (string) \Illuminate\Support\Str::uuid();
 
+        // INBOUND (carrier -> DID -> registered endpoint). Kamailio tags these with
+        // X-CC-Direction: inbound. They have no originating endpoint, so they take a
+        // dedicated path (DID lookup) instead of the outbound rating path below.
+        if (strtolower((string) $request->input('variable_sip_h_X-CC-Direction', '')) === 'inbound') {
+            return $this->inboundDialplan($destination, $callKey);
+        }
+
         // 1. resolve + authenticate the originating endpoint (by SIP user, else source IP)
         $endpoint = $this->resolveEndpoint($authUser, $srcIp);
         if (! $endpoint) {
@@ -486,6 +493,67 @@ class SwitchController extends Controller
             if ($p !== '' && str_starts_with($d, (string) $p)) { return true; }
         }
         return false;
+    }
+
+    /**
+     * Inbound DID call (carrier -> Kamailio -> here). Route the dialed DID to the
+     * customer's registered SIP endpoint by bridging back through Kamailio's usrloc
+     * (sofia/internal/<user>@127.0.0.1:5060). Billed via the CDR as an inbound leg
+     * (direction=inbound -> INCOMING ratecard). Ringing is never gated on balance.
+     */
+    private function inboundDialplan(string $did, string $callKey)
+    {
+        $sw = DB::connection('switch');
+        $didRow = $sw->table('did')->where('did_number', $did)->first();
+        if (! $didRow || empty($didRow->account_id) || in_array((string) $didRow->did_status, ['DEAD', 'BLOCKED'], true)) {
+            return $this->xml($this->reject('NO_ROUTE_DESTINATION', "no active DID {$did}"));
+        }
+        $account = $sw->table('account')->where('account_id', $didRow->account_id)->first();
+        if (! $account || (string) $account->status_id !== '1') {
+            return $this->xml($this->reject('CALL_REJECTED', 'DID account inactive'));
+        }
+        $dst = $sw->table('did_dst')->where('did_number', $did)->first();
+        if (! $dst || (string) $dst->dst_type !== 'CUSTOMER' || blank($dst->dst_destination)) {
+            return $this->xml($this->reject('NO_ROUTE_DESTINATION', 'DID has no customer-endpoint route'));
+        }
+        $ep = $sw->table('customer_sip_account')
+            ->where('username', $dst->dst_destination)->where('account_id', $didRow->account_id)->first();
+        if (! $ep || (string) $ep->status !== '1') {
+            return $this->xml($this->reject('CALL_REJECTED', 'target endpoint unavailable'));
+        }
+        \Illuminate\Support\Facades\Log::info("switch inbound DID {$did} -> {$ep->username} (acct {$didRow->account_id})");
+        return $this->xml($this->inboundXml($did, $didRow->account_id, $ep->username, (int) ($ep->sip_cc ?: 1), $callKey));
+    }
+
+    private function inboundXml(string $did, string $accountId, string $epUser, int $cc, string $callKey): string
+    {
+        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES | ENT_XML1);
+        $vars = [];
+        $vars[] = '<action application="export" data="cc_call_key=' . $e($callKey) . '"/>';
+        $vars[] = '<action application="export" data="cc_account_id=' . $e($accountId) . '"/>';
+        $vars[] = '<action application="export" data="cc_direction=inbound"/>';
+        $vars[] = '<action application="export" data="cc_orig_destination=' . $e($did) . '"/>';
+        $vars[] = '<action application="set" data="hangup_after_bridge=true"/>';
+        $vars[] = '<action application="set" data="continue_on_fail=false"/>';
+        $vars[] = '<action application="limit" data="hash ccportal_cc ' . $e($epUser) . ' ' . $cc . ' !USER_BUSY"/>';
+        // deliver to the registered endpoint via Kamailio usrloc (loopback leg)
+        $vars[] = '<action application="bridge" data="sofia/internal/' . $e($epUser) . '@127.0.0.1:5060"/>';
+        $varsXml = implode("\n          ", $vars);
+        $didE = $e($did);
+        return <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="freeswitch/xml">
+  <section name="dialplan">
+    <context name="default">
+      <extension name="cc_inbound">
+        <condition field="destination_number" expression="^{$didE}$">
+          {$varsXml}
+        </condition>
+      </extension>
+    </context>
+  </section>
+</document>
+XML;
     }
 
     private function reject(string $cause, string $note): string
