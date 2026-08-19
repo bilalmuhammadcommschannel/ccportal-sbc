@@ -16,6 +16,7 @@ use App\Policies\DidPolicy;
 use App\Policies\RatecardPolicy;
 use App\Policies\SipAccountPolicy;
 use App\Policies\TariffPolicy;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -38,6 +39,11 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Did::class, DidPolicy::class);
         Gate::policy(SipAccount::class, SipAccountPolicy::class);
         Gate::policy(BundlePackage::class, BundlePolicy::class);
+
+        // Plain pager — the portal is not Tailwind, so Laravel's default Tailwind
+        // pagination view renders unsized (giant) SVG arrows. Use our own text pager.
+        Paginator::defaultView('vendor.pagination.cc');
+        Paginator::defaultSimpleView('vendor.pagination.cc');
 
         // Scheme/port come from nginx (fastcgi_param HTTPS on + the Host header,
         // which carries :8443). No forceScheme — it dropped the non-standard port
