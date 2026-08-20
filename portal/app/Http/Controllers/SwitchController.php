@@ -522,16 +522,20 @@ class SwitchController extends Controller
             return $this->xml($this->reject('CALL_REJECTED', 'target endpoint unavailable'));
         }
         \Illuminate\Support\Facades\Log::info("switch inbound DID {$did} -> {$ep->username} (acct {$didRow->account_id})");
-        return $this->xml($this->inboundXml($did, $didRow->account_id, $ep->username, (int) ($ep->sip_cc ?: 1), $callKey));
+        return $this->xml($this->inboundXml($did, $didRow->account_id, $ep->username, (int) ($ep->sip_cc ?: 1), $callKey, (string) ($didRow->carrier_id ?? '')));
     }
 
-    private function inboundXml(string $did, string $accountId, string $epUser, int $cc, string $callKey): string
+    private function inboundXml(string $did, string $accountId, string $epUser, int $cc, string $callKey, string $carrierId = ''): string
     {
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES | ENT_XML1);
         $vars = [];
         $vars[] = '<action application="export" data="cc_call_key=' . $e($callKey) . '"/>';
         $vars[] = '<action application="export" data="cc_account_id=' . $e($accountId) . '"/>';
         $vars[] = '<action application="export" data="cc_direction=inbound"/>';
+        // the DID's provider carrier, so inbound CDRs attribute to the inbound trunk
+        if ($carrierId !== '') {
+            $vars[] = '<action application="export" data="cc_carrier_id=' . $e($carrierId) . '"/>';
+        }
         $vars[] = '<action application="export" data="cc_orig_destination=' . $e($did) . '"/>';
         $vars[] = '<action application="set" data="hangup_after_bridge=true"/>';
         $vars[] = '<action application="set" data="continue_on_fail=false"/>';

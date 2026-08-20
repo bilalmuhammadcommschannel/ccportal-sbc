@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Ov500\RatedCdr;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CdrController extends Controller
 {
@@ -36,6 +37,9 @@ class CdrController extends Controller
 
         $cdrs = $base->orderByDesc('rated_at')->paginate(50)->withQueryString();
 
-        return view('reports.cdrs', compact('cdrs', 'summary', 'from', 'to', 'acct', 'dir', 'dest'));
+        // carrier id -> name, so the report shows "Twilio" not "DEFAULT38"
+        $carrierNames = DB::connection('switch')->table('carrier')->pluck('carrier_name', 'carrier_id');
+
+        return view('reports.cdrs', compact('cdrs', 'summary', 'from', 'to', 'acct', 'dir', 'dest', 'carrierNames'));
     }
 }

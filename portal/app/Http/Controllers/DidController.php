@@ -113,7 +113,11 @@ class DidController extends Controller
             ->when(! $user->isAdmin(), fn ($x) => $x->whereIn('account_id', $user->accessibleAccountIds()))
             ->orderBy('username')->get(['username', 'account_id'])
             ->groupBy('account_id')->map(fn ($g) => $g->pluck('username')->values())->toArray();
-        return view('dids.edit', compact('did', 'accounts', 'endpointsByAccount'));
+        // provider carriers (who delivers this DID's inbound calls) — used to
+        // attribute inbound CDRs to the right trunk.
+        $carriers = DB::connection('switch')->table('carrier')
+            ->orderBy('carrier_name')->get(['carrier_id', 'carrier_name', 'carrier_type']);
+        return view('dids.edit', compact('did', 'accounts', 'endpointsByAccount', 'carriers'));
     }
 
     /** Assign to an account + set channels/name/routing destination. */
@@ -122,6 +126,7 @@ class DidController extends Controller
         $this->authorize('assign', $did);
         $data = $request->validate([
             'account_id'       => ['nullable', Rule::exists('switch.account', 'account_id')],
+            'carrier_id'       => ['nullable', Rule::exists('switch.carrier', 'carrier_id')],
             'channels'         => ['required', 'integer', 'min:1', 'max:10000'],
             'did_name'         => ['nullable', 'string', 'max:150'],
             'did_status'       => ['required', Rule::in(['NEW', 'USED', 'DEAD', 'BLOCKED'])],
@@ -150,6 +155,9 @@ class DidController extends Controller
             $did->channels    = $data['channels'];
             $did->did_name    = $data['did_name'] ?? $did->did_name;
             $did->did_status  = $data['did_status'];
+            if (array_key_exists('carrier_id', $data)) {
+                $did->carrier_id = $data['carrier_id'] ?: null;
+            }
             if (array_key_exists('account_id', $data)) {
                 $did->account_id = $data['account_id'] ?: null;
                 if ($did->account_id && $wasUnassigned) {

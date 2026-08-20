@@ -31,7 +31,7 @@
                     <td>{{ $c->account_id }}</td>
                     <td>{{ $c->direction }}</td>
                     <td>{{ $c->destination_number }}</td>
-                    <td class="muted">{{ $c->carrier_id }}</td>
+                    <td class="muted">{{ ($carrierNames[$c->carrier_id] ?? null) ?: ($c->carrier_id ?: '—') }}</td>
                     <td class="right">{{ $c->billsec }}</td>
                     <td class="right">{{ $c->billed_seconds }}</td>
                     <td class="right">{{ rtrim(rtrim(number_format((float)$c->rate,6),'0'),'.') }}</td>
