@@ -74,8 +74,79 @@ class AccountService
                 $this->assignTariff($accountId, 'CUSTOMER', $data['tariff_id'], $actor->email);
             }
 
+            // Every customer gets one ready-to-use SIP endpoint: username =
+            // <company>_<5 rand>, a strong random secret (password auth). Both are
+            // returned on the (non-persisted) account so the caller can show them once.
+            [$epUser, $epSecret] = $this->createDefaultEndpoint($accountId, $data, $actor);
+            $account->new_endpoint_username = $epUser;
+            $account->new_endpoint_secret = $epSecret;
+
             return $account;
         });
+    }
+
+    /**
+     * Provision the customer's first SIP endpoint (customer_sip_account).
+     * Returns [username, plaintext secret] — the secret is a SIP shared secret
+     * (stored as-is for FreeSWITCH digest auth), shown to the operator once.
+     */
+    private function createDefaultEndpoint(string $accountId, array $data, User $actor): array
+    {
+        $sw = DB::connection('switch');
+
+        // username: <sanitised company>_<5 lower-alnum>, unique, <=30 chars
+        $base = preg_replace('/[^A-Za-z0-9]/', '', (string) ($data['company_name'] ?? ''));
+        if ($base === '') {
+            $base = 'cust';
+        }
+        $base = substr($base, 0, 20);
+        do {
+            $username = $base . '_' . $this->randToken(5, 'abcdefghijkmnpqrstuvwxyz0123456789');
+        } while ($sw->table('customer_sip_account')->where('username', $username)->exists());
+
+        // secret: 18 chars, guaranteed lower+upper+digit (endpoint policy)
+        do {
+            $secret = $this->randToken(18, 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789');
+        } while (! preg_match('/[a-z]/', $secret) || ! preg_match('/[A-Z]/', $secret) || ! preg_match('/\d/', $secret));
+
+        $sw->table('customer_sip_account')->insert([
+            'username'              => $username,
+            'secret'                => $secret,
+            'account_id'            => $accountId,
+            'status'                => '1',
+            'ipauthfrom'            => 'NO',            // password auth
+            'sip_cc'                => (int) ($data['account_cc'] ?? 0) ?: 2,
+            'sip_cps'               => 1,
+            'codecs'                => 'PCMU,PCMA',     // G.711 a-law + u-law (house standard)
+            'cli_prefer'            => 'rpid',
+            'display_name'          => substr((string) ($data['company_name'] ?? $accountId), 0, 30),
+            'name'                  => (string) ($data['company_name'] ?? $accountId),
+            'email_address'         => $data['emailaddress'] ?? ($accountId . '@ccportal.local'),
+            'phone_number'          => (string) ($data['phone'] ?? ''),
+            'call_recording'        => '0',
+            'dnd'                   => 'N',
+            'user_type'             => 'SWITCH',
+            'extension_id'          => 'EXT' . strtoupper($this->randToken(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789')),
+            'created_by'            => $actor->email,
+            'created_by_account_id' => $actor->account_id ?: self::PLATFORM,
+            'updated_by'            => $actor->email,
+            'created_dt'            => now(),
+            'updated_dt'            => now(),
+        ]);
+
+        Log::info("auto-provisioned endpoint {$username} for {$accountId} by {$actor->email}");
+        return [$username, $secret];
+    }
+
+    /** Cryptographically-random token of $len chars from $alphabet. */
+    private function randToken(int $len, string $alphabet): string
+    {
+        $max = strlen($alphabet) - 1;
+        $out = '';
+        for ($i = 0; $i < $len; $i++) {
+            $out .= $alphabet[random_int(0, $max)];
+        }
+        return $out;
     }
 
     public function createReseller(array $data, User $actor): Account

@@ -45,7 +45,14 @@ class CustomerController extends Controller
         $data = $this->validated($request);
         $account = $svc->createCustomer($data, $request->user());
 
-        return redirect()->route('customers.show', $account)->with('status', "Customer {$data['company_name']} created ({$account->account_id}).");
+        // The SIP secret is shown ONCE here (it is masked everywhere after) — the
+        // operator must copy it now to hand to the customer / provision the phone.
+        return redirect()->route('customers.show', $account)
+            ->with('status', "Customer {$data['company_name']} created ({$account->account_id}).")
+            ->with('new_endpoint', [
+                'username' => $account->new_endpoint_username ?? null,
+                'secret'   => $account->new_endpoint_secret ?? null,
+            ]);
     }
 
     public function show(Account $customer)

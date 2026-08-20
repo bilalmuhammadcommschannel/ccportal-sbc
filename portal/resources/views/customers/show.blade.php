@@ -1,6 +1,15 @@
 @extends('layouts.app')
 @section('title', optional($customer->customerRow)->company_name ?? $customer->account_id)
 @section('content')
+    @if(session('new_endpoint.secret'))
+        <div class="flash" style="border-color:#c67c00;background:#fdf6e9">
+            <strong>SIP endpoint created — copy the password now, it is shown only this once.</strong>
+            <div style="margin-top:8px;display:flex;gap:24px;flex-wrap:wrap;font-variant-numeric:tabular-nums">
+                <span>Username <code style="font-size:14px">{{ session('new_endpoint.username') }}</code></span>
+                <span>Password <code style="font-size:14px">{{ session('new_endpoint.secret') }}</code></span>
+            </div>
+        </div>
+    @endif
     <div class="rowbar"><h1 style="margin:0">{{ optional($customer->customerRow)->company_name ?? $customer->account_id }}</h1>
         <div>
             <a class="btn ghost sm" href="{{ route('customers.index') }}">← All</a>
