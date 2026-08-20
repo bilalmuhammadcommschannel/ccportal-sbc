@@ -97,6 +97,17 @@ while IFS=$'\t' read -r ruser rcontact rua rexp; do
   reg_json="$reg_json{\"aor\":\"$(json_escape "$ruser")\",\"ip\":\"$(json_escape "$rip")\",\"ua\":\"$(json_escape "$rua")\",\"expires\":\"$(json_escape "$rexp")\"}"
 done < <(mysql kamailio -N -e "SELECT username,contact,COALESCE(user_agent,''),expires FROM location" 2>/dev/null)
 
+# --- seed the trusted inbound-carrier ACL into Kamailio (DB-driven) ---
+# Every active carrier's IP-auth endpoint (carrier_ips, IPv4) is trusted to send
+# us inbound INVITEs without digest auth. Refreshed every run into the carrieracl
+# htable (autoexpire drops carriers removed in the portal). No hard-coding per
+# carrier: add a carrier in the portal and it is trusted within one cycle.
+if command -v kamcmd >/dev/null 2>&1; then
+  mysql switch -N -e "SELECT ci.ipaddress FROM carrier_ips ci JOIN carrier c ON c.carrier_id=ci.carrier_id WHERE ci.auth_type='IP' AND c.carrier_status='1' AND ci.ipaddress REGEXP '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+\$'" 2>/dev/null | while read -r cip; do
+    [ -n "$cip" ] && kamcmd htable.sets carrieracl "$cip" 1 >/dev/null 2>&1
+  done
+fi
+
 # --- host ---
 load=$(cut -d' ' -f1 /proc/loadavg)
 memtot=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
