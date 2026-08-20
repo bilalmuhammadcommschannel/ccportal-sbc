@@ -7,7 +7,7 @@
         <div class="card"><h2>Package</h2>
             <div class="grid3">
                 <div class="field"><label>Name</label><input name="bundle_package_name" value="{{ old('bundle_package_name',$bundle->bundle_package_name) }}" required></div>
-                <div class="field"><label>Currency ID</label><input type="number" name="bundle_package_currency_id" value="{{ old('bundle_package_currency_id',$bundle->bundle_package_currency_id ?? 1) }}" required></div>
+                <div class="field"><label>Currency</label><select name="bundle_package_currency_id" required>@foreach($currencies as $cur)<option value="{{ $cur->currency_id }}" @selected((int)old('bundle_package_currency_id',$bundle->bundle_package_currency_id ?? 6)===(int)$cur->currency_id)>{{ $cur->name }} ({{ $cur->symbol }})</option>@endforeach</select></div>
                 <div class="field"><label>Status</label><select name="bundle_package_status"><option value="1" @selected((string)old('bundle_package_status',$bundle->bundle_package_status)==='1')>Active</option><option value="0" @selected((string)old('bundle_package_status',$bundle->bundle_package_status)==='0')>Inactive</option></select></div>
             </div>
             <div class="grid3">

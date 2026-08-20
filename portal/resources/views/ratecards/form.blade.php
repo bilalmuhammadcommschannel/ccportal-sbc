@@ -7,7 +7,7 @@
         <div class="card"><h2>Ratecard</h2>
             <div class="grid">
                 <div class="field"><label>Name</label><input name="ratecard_name" value="{{ old('ratecard_name',$ratecard->ratecard_name) }}" required></div>
-                <div class="field"><label>Currency ID</label><input type="number" name="ratecard_currency_id" value="{{ old('ratecard_currency_id',$ratecard->ratecard_currency_id ?? 1) }}" required></div>
+                <div class="field"><label>Currency</label><select name="ratecard_currency_id" required>@foreach($currencies as $cur)<option value="{{ $cur->currency_id }}" @selected((int)old('ratecard_currency_id',$ratecard->ratecard_currency_id ?? 6)===(int)$cur->currency_id)>{{ $cur->name }} ({{ $cur->symbol }})</option>@endforeach</select></div>
             </div>
             <div class="grid">
                 <div class="field"><label>Type @if($mode==='edit')<span class="muted">(fixed)</span>@endif</label>

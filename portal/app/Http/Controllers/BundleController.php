@@ -33,7 +33,7 @@ class BundleController extends Controller
     public function create()
     {
         $this->authorize('create', BundlePackage::class);
-        return view('bundles.form', ['mode' => 'create', 'bundle' => new BundlePackage(['bundle_package_status' => '1', 'bundle_option' => '1', 'package_option' => '0', 'bundle1_type' => 'MINUTE', 'bundle2_type' => 'MINUTE', 'bundle3_type' => 'MINUTE'])]);
+        return view('bundles.form', ['mode' => 'create', 'bundle' => new BundlePackage(['bundle_package_status' => '1', 'bundle_option' => '1', 'package_option' => '0', 'bundle1_type' => 'MINUTE', 'bundle2_type' => 'MINUTE', 'bundle3_type' => 'MINUTE']), 'currencies' => $this->currencies()]);
     }
 
     public function store(Request $request)
@@ -70,7 +70,13 @@ class BundleController extends Controller
     public function edit(BundlePackage $bundle)
     {
         $this->authorize('update', $bundle);
-        return view('bundles.form', ['mode' => 'edit', 'bundle' => $bundle]);
+        return view('bundles.form', ['mode' => 'edit', 'bundle' => $bundle, 'currencies' => $this->currencies()]);
+    }
+
+    /** Currency options for the form (id + name + symbol). */
+    private function currencies()
+    {
+        return \Illuminate\Support\Facades\DB::connection('switch')->table('sys_currencies')->orderBy('name')->get();
     }
 
     public function update(Request $request, BundlePackage $bundle)

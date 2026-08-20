@@ -15,7 +15,7 @@
                 </div>
             </div>
             <div class="grid3">
-                <div class="field"><label>Currency ID</label><input type="number" name="tariff_currency_id" value="{{ old('tariff_currency_id',$tariff->tariff_currency_id ?? 1) }}" required></div>
+                <div class="field"><label>Currency</label><select name="tariff_currency_id" required>@foreach($currencies as $cur)<option value="{{ $cur->currency_id }}" @selected((int)old('tariff_currency_id',$tariff->tariff_currency_id ?? 6)===(int)$cur->currency_id)>{{ $cur->name }} ({{ $cur->symbol }})</option>@endforeach</select></div>
                 <div class="field"><label>Status</label><select name="tariff_status"><option value="1" @selected((string)old('tariff_status',$tariff->tariff_status)==='1')>Active</option><option value="0" @selected((string)old('tariff_status',$tariff->tariff_status)==='0')>Inactive</option></select></div>
                 <div class="field"><label>Monthly charge</label><input name="monthly_charges" value="{{ old('monthly_charges',$tariff->monthly_charges ?? 0) }}"></div>
             </div>

@@ -31,7 +31,7 @@ class TariffController extends Controller
     public function create()
     {
         $this->authorize('create', Tariff::class);
-        return view('tariffs.form', ['tariff' => new Tariff(['tariff_type' => 'CUSTOMER', 'tariff_status' => '1', 'bundle_option' => '0']), 'mode' => 'create']);
+        return view('tariffs.form', ['tariff' => new Tariff(['tariff_type' => 'CUSTOMER', 'tariff_status' => '1', 'bundle_option' => '0']), 'mode' => 'create', 'currencies' => $this->currencies()]);
     }
 
     public function store(Request $request)
@@ -67,7 +67,13 @@ class TariffController extends Controller
     public function edit(Tariff $tariff)
     {
         $this->authorize('update', $tariff);
-        return view('tariffs.form', ['tariff' => $tariff, 'mode' => 'edit']);
+        return view('tariffs.form', ['tariff' => $tariff, 'mode' => 'edit', 'currencies' => $this->currencies()]);
+    }
+
+    /** Currency options for the form (id + name + symbol). */
+    private function currencies()
+    {
+        return \Illuminate\Support\Facades\DB::connection('switch')->table('sys_currencies')->orderBy('name')->get();
     }
 
     public function update(Request $request, Tariff $tariff)
