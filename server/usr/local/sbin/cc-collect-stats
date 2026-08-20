@@ -87,6 +87,16 @@ for s in nginx php8.3-fpm mariadb fail2ban freeswitch kamailio nftables ccportal
   svc_json="$svc_json{\"name\":\"$(json_escape "$s")\",\"state\":\"$(json_escape "$st")\"}"
 done
 
+# --- kamailio registrations (usrloc location table, db_mode write-through) ---
+reg_json=""
+while IFS=$'\t' read -r ruser rcontact rua rexp; do
+  [ -z "$ruser" ] && continue
+  rip=$(printf '%s' "$rcontact" | sed -n 's#.*@\([^:;>]*\).*#\1#p')
+  [ "$rua" = "NULL" ] && rua=""
+  [ -n "$reg_json" ] && reg_json="$reg_json,"
+  reg_json="$reg_json{\"aor\":\"$(json_escape "$ruser")\",\"ip\":\"$(json_escape "$rip")\",\"ua\":\"$(json_escape "$rua")\",\"expires\":\"$(json_escape "$rexp")\"}"
+done < <(mysql kamailio -N -e "SELECT username,contact,COALESCE(user_agent,''),expires FROM location" 2>/dev/null)
+
 # --- host ---
 load=$(cut -d' ' -f1 /proc/loadavg)
 memtot=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
@@ -113,6 +123,7 @@ cat > "$TMP" <<JSON
   "fail2ban": { "jails": [$jails_json], "bans": [$bans_json], "currently_banned": $cur_banned, "total_banned": $tot_banned, "total_failed": $tot_failed },
   "freeswitch": { "up": $fs_up, "calls": $fs_calls, "channels": $fs_channels, "channel_list": $fs_chan_json },
   "services": [$svc_json],
+  "registrations": [$reg_json],
   "host": { "load": "$load", "cpu_pct": $cpu_pct, "mem_pct": $mem_pct, "mem_total_mb": $memtot, "mem_available_mb": $memav, "disk_used_pct": ${disk:-0}, "uptime_sec": $up }
 }
 JSON

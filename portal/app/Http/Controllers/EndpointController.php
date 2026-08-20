@@ -26,7 +26,32 @@ class EndpointController extends Controller
             ->orderBy('username')
             ->paginate(30)->withQueryString();
 
-        return view('endpoints.index', compact('endpoints', 'q'));
+        // live registration state (aor -> ip/ua/expires) from the root stats snapshot
+        $regs = $this->registrations();
+
+        return view('endpoints.index', compact('endpoints', 'q', 'regs'));
+    }
+
+    /**
+     * Kamailio usrloc registrations, keyed by lower-cased AoR, from the root
+     * monitoring snapshot (/var/lib/ccportal/stats.json). The web process has no
+     * kamcmd rights — it only reads the file the cc-stats timer writes.
+     */
+    private function registrations(): array
+    {
+        $file = '/var/lib/ccportal/stats.json';
+        if (! is_readable($file)) {
+            return [];
+        }
+        $data = json_decode((string) @file_get_contents($file), true) ?: [];
+        $out = [];
+        foreach ($data['registrations'] ?? [] as $r) {
+            $aor = strtolower((string) ($r['aor'] ?? ''));
+            if ($aor !== '') {
+                $out[$aor] = ['ip' => $r['ip'] ?? '', 'ua' => $r['ua'] ?? '', 'expires' => $r['expires'] ?? ''];
+            }
+        }
+        return $out;
     }
 
     public function create(Request $request)
