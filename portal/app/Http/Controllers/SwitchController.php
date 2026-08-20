@@ -540,8 +540,16 @@ class SwitchController extends Controller
         $vars[] = '<action application="set" data="hangup_after_bridge=true"/>';
         $vars[] = '<action application="set" data="continue_on_fail=false"/>';
         $vars[] = '<action application="limit" data="hash ccportal_cc ' . $e($epUser) . ' ' . $cc . ' !USER_BUSY"/>';
+        // Present the DID (not the SIP username) in BOTH the Request-URI and the
+        // To header, so a DID-routing endpoint (e.g. a Yeastar register-trunk)
+        // can match its inbound route — it 603-declines an INVITE addressed to a
+        // bare username. We bridge to the DID (FS sets R-URI + To = DID) and pass
+        // the real registration AoR in X-CC-AOR; Kamailio looks the contact up by
+        // that AoR, then restores the DID as the R-URI user on the way out.
+        $vars[] = '<action application="set" data="sip_h_X-CC-AOR=' . $e($epUser) . '"/>';
+        $vars[] = '<action application="set" data="sip_h_X-CC-DID=' . $e($did) . '"/>';
         // deliver to the registered endpoint via Kamailio usrloc (loopback leg)
-        $vars[] = '<action application="bridge" data="sofia/internal/' . $e($epUser) . '@127.0.0.1:5060"/>';
+        $vars[] = '<action application="bridge" data="sofia/internal/' . $e($did) . '@127.0.0.1:5060"/>';
         $varsXml = implode("\n          ", $vars);
         $didE = $e($did);
         return <<<XML
