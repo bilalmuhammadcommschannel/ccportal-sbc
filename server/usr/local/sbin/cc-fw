@@ -1,0 +1,29 @@
+#!/bin/bash
+# cc-fw — the ONLY firewall action the portal (www-data) may take as root,
+# via: sudo -n /usr/local/sbin/cc-fw unban <jail> <ip>
+#
+# Every argument is re-validated here against a hard allowlist, so a bug or
+# injection in the web layer still cannot run anything but a fail2ban unban of
+# a syntactically-valid IP in a known jail. No shell expansion of args.
+set -euo pipefail
+
+action="${1:-}"; jail="${2:-}"; ip="${3:-}"
+
+[ "$action" = "unban" ] || { echo "usage: cc-fw unban <jail> <ip>" >&2; exit 2; }
+
+case "$jail" in
+  ccportal-auth|ccportal-probe|ccsip-auth|ccsip-scanner|sshd) ;;
+  *) echo "cc-fw: unknown jail '$jail'" >&2; exit 3 ;;
+esac
+
+# Strict IPv4 (dotted quad, each octet 0-255) or IPv6 (hex/colon) — no hostnames.
+valid_ip=0
+if [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+  IFS='.' read -r a b c d <<< "$ip"
+  if (( a<=255 && b<=255 && c<=255 && d<=255 )); then valid_ip=1; fi
+elif [[ "$ip" =~ ^[0-9A-Fa-f:]{2,45}$ && "$ip" == *:* ]]; then
+  valid_ip=1
+fi
+[ "$valid_ip" = 1 ] || { echo "cc-fw: invalid ip '$ip'" >&2; exit 4; }
+
+exec /usr/bin/fail2ban-client set "$jail" unbanip "$ip"

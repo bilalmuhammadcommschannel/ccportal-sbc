@@ -2,15 +2,19 @@
 ESLPW=$(grep -oE 'value="[a-f0-9]{40}"' /etc/freeswitch/autoload_configs/event_socket.conf.xml 2>/dev/null | grep -oE '[a-f0-9]{40}' | head -1)
 # Collects operational + security stats as ROOT and writes a JSON snapshot the
 # portal (www-data) can read. Deliberate design: the web process never gets
-# fail2ban/fs_cli privileges — it only reads a file.
+# fail2ban/fs_cli privileges — it only reads a file. (Unblock-from-UI goes the
+# other way, through the narrowly-scoped setuid helper /usr/local/sbin/cc-fw.)
 set -u
 OUT=/var/lib/ccportal/stats.json
+HIST=/var/lib/ccportal/stats-history.json
+CPUPREV=/var/lib/ccportal/.cpustat
 TMP=$(mktemp)
 
 json_escape(){ printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
-# --- fail2ban ---
+# --- fail2ban (per-jail counts + per-IP bans with ban time) ---
 jails_json=""
+bans_json=""          # flat list across all jails: {ip,jail,since,until}
 tot_banned=0; tot_failed=0; cur_banned=0
 for j in $(fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:\s*//p' | tr ',' ' '); do
   s=$(fail2ban-client status "$j" 2>/dev/null)
@@ -23,6 +27,16 @@ for j in $(fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:\s*//p' | 
   tot_banned=$((tot_banned+tb)); tot_failed=$((tot_failed+tf)); cur_banned=$((cur_banned+cb))
   [ -n "$jails_json" ] && jails_json="$jails_json,"
   jails_json="$jails_json{\"name\":\"$(json_escape "$j")\",\"currently_failed\":$cf,\"total_failed\":$tf,\"currently_banned\":$cb,\"total_banned\":$tb,\"banned_ips\":\"$(json_escape "$ips")\"}"
+  # per-IP with ban time. `banip --with-time` => "IP\tYYYY-MM-DD HH:MM:SS + <bantime> = YYYY-MM-DD HH:MM:SS"
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    bip=$(printf '%s' "$line" | awk '{print $1}')
+    [ -z "$bip" ] && continue
+    since=$(printf '%s' "$line" | sed -n 's/^[^ ]*[[:space:]]*\([0-9-]\{10\} [0-9:]\{8\}\).*/\1/p')
+    until=$(printf '%s' "$line" | sed -n 's/.*=[[:space:]]*\([0-9-]\{10\} [0-9:]\{8\}\).*/\1/p')
+    [ -n "$bans_json" ] && bans_json="$bans_json,"
+    bans_json="$bans_json{\"ip\":\"$(json_escape "$bip")\",\"jail\":\"$(json_escape "$j")\",\"since\":\"$(json_escape "$since")\",\"until\":\"$(json_escape "$until")\"}"
+  done < <(fail2ban-client get "$j" banip --with-time 2>/dev/null)
 done
 
 # --- freeswitch live calls ---
@@ -32,16 +46,37 @@ if systemctl is-active --quiet freeswitch; then
   fs_calls=$(fs_cli -p "$ESLPW" -x "show calls count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
   fs_channels=$(fs_cli -p "$ESLPW" -x "show channels count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
   fs_calls=${fs_calls:-0}; fs_channels=${fs_channels:-0}
-  # per-channel detail (name,cid_num,dest,duration) as JSON
-  # column order from `show channels as delim |` header:
-  #  1 uuid | 2 direction | 5 name | 6 state | 7 cid_name | 8 cid_num | 10 dest
-  # 18 write_codec | 26 callstate | 28 callee_num
-  rows=$(fs_cli -p "$ESLPW" -x "show channels as delim |" 2>/dev/null | awk -F'|' '
-    NR>1 && NF>20 {
-      gsub(/"/,"",$0);
-      printf "{\"uuid\":\"%s\",\"direction\":\"%s\",\"name\":\"%s\",\"cid\":\"%s\",\"dest\":\"%s\",\"state\":\"%s\",\"codec\":\"%s\"},", $1,$2,$5,$8,$10,$26,$18
-    }' | sed 's/,$//')
-  [ -n "$rows" ] && fs_chan_json="[$rows]"
+  # per-channel detail. `show channels as delim |` columns (1-indexed):
+  #  1 uuid | 2 direction | 5 name | 8 cid_num | 10 dest | 18 write_codec
+  #  25 accountcode (we set it = account_id) | 26 callstate
+  # Emit one \034-delimited record per channel, then enrich each with the
+  # call-level vars (cc_direction/cc_carrier_id) and a human trunk name. The
+  # raw sofia/... channel name is NEVER exposed to the portal.
+  chans=$(fs_cli -p "$ESLPW" -x "show channels as delim |" 2>/dev/null | awk -F'|' '
+    NR>1 && NF>25 { gsub(/"/,"",$0);
+      printf "%s\034%s\034%s\034%s\034%s\034%s\034%s\034%s\n",$1,$2,$5,$8,$10,$18,$25,$26 }')
+  chan_json=""; count=0
+  while IFS=$'\034' read -r uuid legdir name cid dest codec acct state; do
+    [ -z "$uuid" ] && continue
+    count=$((count+1))
+    ccdir=""; cccar=""
+    if [ "$count" -le 60 ]; then   # bound per-channel fs_cli calls under load
+      ccdir=$(fs_cli -p "$ESLPW" -x "uuid_getvar $uuid cc_direction" 2>/dev/null | tr -d '\r\n')
+      cccar=$(fs_cli -p "$ESLPW" -x "uuid_getvar $uuid cc_carrier_id" 2>/dev/null | tr -d '\r\n')
+    fi
+    [ "$ccdir" = "_undef_" ] && ccdir=""
+    [ "$cccar" = "_undef_" ] && cccar=""
+    # trunk host from the channel name (sofia/PROFILE/USER@HOST); internal = endpoint
+    profile=$(printf '%s' "$name" | cut -d/ -f2)
+    host=$(printf '%s' "$name" | sed -n 's#.*@##p' | sed 's/[:;].*//')
+    trunk=""
+    [ "$profile" = "external" ] && trunk="$host"
+    [ "$profile" = "internal" ] && trunk="endpoint"
+    dir="$ccdir"; [ -z "$dir" ] && dir="$legdir"
+    [ -n "$chan_json" ] && chan_json="$chan_json,"
+    chan_json="$chan_json{\"uuid\":\"$(json_escape "$uuid")\",\"direction\":\"$(json_escape "$dir")\",\"account\":\"$(json_escape "$acct")\",\"carrier_id\":\"$(json_escape "$cccar")\",\"trunk\":\"$(json_escape "$trunk")\",\"cid\":\"$(json_escape "$cid")\",\"dest\":\"$(json_escape "$dest")\",\"codec\":\"$(json_escape "$codec")\",\"state\":\"$(json_escape "$state")\"}"
+  done <<< "$chans"
+  [ -n "$chan_json" ] && fs_chan_json="[$chan_json]"
 fi
 
 # --- services ---
@@ -58,14 +93,42 @@ memtot=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
 memav=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
 disk=$(df -P / | awk 'NR==2{print $5}' | tr -d '%')
 up=$(awk '{print int($1)}' /proc/uptime)
+mem_pct=0; [ "${memtot:-0}" -gt 0 ] && mem_pct=$(( (memtot-memav)*100/memtot ))
+
+# CPU % since the previous run (delta of /proc/stat), so it reflects the ~20s window.
+read -r _ u n sy id io ir sof st _ < /proc/stat
+cur_idle=$((id+io)); cur_tot=$((u+n+sy+id+io+ir+sof+st))
+cpu_pct=0
+if [ -f "$CPUPREV" ]; then
+  read -r p_idle p_tot < "$CPUPREV" 2>/dev/null || { p_idle=0; p_tot=0; }
+  d_tot=$((cur_tot-p_tot)); d_idle=$((cur_idle-p_idle))
+  [ "$d_tot" -gt 0 ] && cpu_pct=$(( (100*(d_tot-d_idle)) / d_tot ))
+fi
+echo "$cur_idle $cur_tot" > "$CPUPREV"
+[ "$cpu_pct" -lt 0 ] && cpu_pct=0; [ "$cpu_pct" -gt 100 ] && cpu_pct=100
 
 cat > "$TMP" <<JSON
 {
   "generated_at": "$(date -u '+%Y-%m-%d %H:%M:%S')",
-  "fail2ban": { "jails": [$jails_json], "currently_banned": $cur_banned, "total_banned": $tot_banned, "total_failed": $tot_failed },
+  "fail2ban": { "jails": [$jails_json], "bans": [$bans_json], "currently_banned": $cur_banned, "total_banned": $tot_banned, "total_failed": $tot_failed },
   "freeswitch": { "up": $fs_up, "calls": $fs_calls, "channels": $fs_channels, "channel_list": $fs_chan_json },
   "services": [$svc_json],
-  "host": { "load": "$load", "mem_total_mb": $memtot, "mem_available_mb": $memav, "disk_used_pct": ${disk:-0}, "uptime_sec": $up }
+  "host": { "load": "$load", "cpu_pct": $cpu_pct, "mem_pct": $mem_pct, "mem_total_mb": $memtot, "mem_available_mb": $memav, "disk_used_pct": ${disk:-0}, "uptime_sec": $up }
 }
 JSON
 chmod 644 "$TMP" && mv "$TMP" "$OUT"
+
+# --- rolling history ring buffer for CPU/RAM/live-call sparklines (keep ~2h @ 20s = 360) ---
+python3 - "$HIST" "$cpu_pct" "$mem_pct" "$fs_calls" <<'PY' 2>/dev/null || true
+import json, sys, os, time
+path, cpu, mem, calls = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+hist = []
+if os.path.exists(path):
+    try: hist = json.load(open(path)).get("samples", [])
+    except Exception: hist = []
+hist.append({"t": int(time.time()), "cpu": cpu, "mem": mem, "calls": calls})
+hist = hist[-360:]
+tmp = path + ".tmp"
+json.dump({"samples": hist}, open(tmp, "w"))
+os.chmod(tmp, 0o644); os.replace(tmp, path)
+PY

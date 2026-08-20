@@ -1,0 +1,3 @@
+# Allow the portal (www-data) to run ONLY the firewall unban helper as root.
+# The helper re-validates jail + IP against a hard allowlist. No other command.
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/cc-fw

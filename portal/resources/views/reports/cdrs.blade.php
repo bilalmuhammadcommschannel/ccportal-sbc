@@ -7,7 +7,7 @@
         <form method="GET" action="{{ route('cdrs.index') }}" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
             <div class="field" style="margin:0"><label>From</label><input type="date" name="from" value="{{ $from }}"></div>
             <div class="field" style="margin:0"><label>To</label><input type="date" name="to" value="{{ $to }}"></div>
-            <div class="field" style="margin:0"><label>Account</label><input name="account" value="{{ $acct }}" placeholder="STC300000"></div>
+            <div class="field" style="margin:0"><label>Account</label><input name="account" value="{{ $acct }}" placeholder="account ID"></div>
             <div class="field" style="margin:0"><label>Direction</label><select name="direction"><option value="">Any</option><option value="outbound" @selected($dir==='outbound')>Outbound</option><option value="inbound" @selected($dir==='inbound')>Inbound</option></select></div>
             <div class="field" style="margin:0"><label>Destination</label><input name="dest" value="{{ $dest }}" placeholder="614…"></div>
             <button class="btn ghost sm" type="submit">Filter</button>

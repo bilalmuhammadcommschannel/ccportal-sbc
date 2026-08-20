@@ -8,6 +8,7 @@ use App\Http\Controllers\CdrController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DidController;
+use App\Http\Controllers\FirewallController;
 use App\Http\Controllers\EndpointController;
 use App\Http\Controllers\ResellerController;
 use App\Http\Controllers\PasswordController;
@@ -45,6 +46,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
         Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
         Route::post('/users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.resetPassword');
+    });
+
+    // Firewall — blocked-IP visibility + unblock. Admin only (re-checked in the
+    // controller). Unblock runs through the narrowly-scoped sudo helper cc-fw.
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/firewall', [FirewallController::class, 'index'])->name('firewall.index');
+        Route::post('/firewall/unban', [FirewallController::class, 'unban'])->name('firewall.unban');
     });
 
     // Carriers — admin-only in slice 1 (role gate) AND policy-checked per action.

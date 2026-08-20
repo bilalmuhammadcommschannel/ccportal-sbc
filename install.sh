@@ -289,6 +289,9 @@ while IFS= read -r -d '' f; do
     case "$rel" in
         /etc/nftables.conf) continue;;                    # handled below (open-sip toggle)
         /usr/local/sbin/*) copy_render "$f" "$dest" 0755;;
+        /etc/sudoers.d/*)                                 # sudo rejects bad/loose perms — 0440 + validate
+            copy_render "$f" "$dest" 0440
+            visudo -cf "$dest" >/dev/null 2>&1 || { rm -f "$dest"; die "sudoers $dest failed validation"; };;
         *) copy_render "$f" "$dest";;
     esac
 done < <(find "$REPO/server" -type f -print0)
