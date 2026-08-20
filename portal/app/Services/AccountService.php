@@ -115,7 +115,7 @@ class AccountService
             'account_id'            => $accountId,
             'status'                => '1',
             'ipauthfrom'            => 'NO',            // password auth
-            'sip_cc'                => (int) ($data['account_cc'] ?? 0) ?: 2,
+            'sip_cc'                => (int) ($data['account_cc'] ?? 0) ?: 10,
             'sip_cps'               => 1,
             'codecs'                => 'PCMU,PCMA',     // G.711 a-law + u-law (house standard)
             'cli_prefer'            => 'rpid',
