@@ -117,7 +117,17 @@ class DidController extends Controller
         // attribute inbound CDRs to the right trunk.
         $carriers = DB::connection('switch')->table('carrier')
             ->orderBy('carrier_name')->get(['carrier_id', 'carrier_name', 'carrier_type']);
-        return view('dids.edit', compact('did', 'accounts', 'endpointsByAccount', 'carriers'));
+        // searchable account options showing the company name (grows over time)
+        $custNames = DB::connection('switch')->table('customers')->pluck('company_name', 'account_id');
+        $resNames  = DB::connection('switch')->table('resellers')->pluck('company_name', 'account_id');
+        $accountOptions = $accounts->map(function ($a) use ($custNames, $resNames) {
+            $name = $custNames[$a->account_id] ?? $resNames[$a->account_id] ?? null;
+            return [
+                'id'    => $a->account_id,
+                'label' => ($name ? $name . ' — ' : '') . $a->account_id . ' (' . $a->account_type . ')',
+            ];
+        })->values();
+        return view('dids.edit', compact('did', 'accounts', 'endpointsByAccount', 'carriers', 'accountOptions'));
     }
 
     /** Assign to an account + set channels/name/routing destination. */

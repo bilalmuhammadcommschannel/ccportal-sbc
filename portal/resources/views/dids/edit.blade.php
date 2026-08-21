@@ -6,9 +6,13 @@
         <div class="card"><h2>Assignment</h2>
             <div class="grid">
                 <div class="field"><label>Assigned account</label>
-                    <select name="account_id" id="acctSel"><option value="">— unassigned —</option>
-                        @foreach($accounts as $a)<option value="{{ $a->account_id }}" @selected(old('account_id',$did->account_id)===$a->account_id)>{{ $a->account_id }} ({{ $a->account_type }})</option>@endforeach
-                    </select>
+                    {{-- searchable combobox: shows the company name, filters as you type; the
+                         hidden #acctSel carries the submitted account_id (kept for the routing JS). --}}
+                    <input type="hidden" name="account_id" id="acctSel" value="{{ old('account_id',$did->account_id) }}">
+                    <div class="combo">
+                        <input type="text" id="acctSearch" class="combo-input" autocomplete="off" placeholder="Search customer name or account ID…">
+                        <div id="acctList" class="combo-list" hidden></div>
+                    </div>
                 </div>
                 <div class="field"><label>Status</label><select name="did_status">@foreach(['NEW','USED','DEAD','BLOCKED'] as $s)<option value="{{ $s }}" @selected(old('did_status',$did->did_status)===$s)>{{ $s }}</option>@endforeach</select></div>
             </div>
@@ -39,6 +43,46 @@
         </div>
         <button class="btn" type="submit">Save</button>
     </form>
+
+    <style>
+        .combo{position:relative}
+        .combo-list{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid #cfdae4;
+                    border-radius:7px;box-shadow:0 8px 24px rgba(16,36,55,.14);max-height:260px;overflow-y:auto}
+        .combo-opt{padding:8px 11px;cursor:pointer;font-size:13.5px}
+        .combo-opt:hover,.combo-opt.active{background:#eef5fd}
+        .combo-opt .muted{font-size:12px}
+    </style>
+
+    <script>
+    (function () {
+        // searchable account combobox -> keeps hidden #acctSel (account_id) in sync
+        var OPTS = @json($accountOptions ?? []);
+        var hid = document.getElementById('acctSel');
+        var box = document.getElementById('acctSearch');
+        var list = document.getElementById('acctList');
+        var UNASSIGNED = { id: '', label: '— unassigned —' };
+        function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+        function labelFor(id){ if(!id) return ''; for(var i=0;i<OPTS.length;i++){ if(OPTS[i].id===id) return OPTS[i].label; } return id; }
+        function render(q){
+            q = (q||'').trim().toLowerCase();
+            var rows = [UNASSIGNED].concat(OPTS).filter(function(o){ return !q || o.label.toLowerCase().indexOf(q) !== -1; });
+            list.innerHTML = rows.map(function(o){ return '<div class="combo-opt" data-val="'+esc(o.id)+'">'+esc(o.label)+'</div>'; }).join('')
+                || '<div class="combo-opt muted">No match</div>';
+            list.hidden = false;
+        }
+        function pick(id){
+            hid.value = id;
+            box.value = id ? labelFor(id) : '';
+            list.hidden = true;
+            hid.dispatchEvent(new Event('change'));   // fire the routing-picker refresh
+        }
+        box.value = labelFor(hid.value);
+        box.addEventListener('focus', function(){ render(box.value === labelFor(hid.value) ? '' : box.value); });
+        box.addEventListener('input', function(){ render(box.value); });
+        list.addEventListener('mousedown', function(e){ var o=e.target.closest('.combo-opt'); if(o && o.hasAttribute('data-val')){ e.preventDefault(); pick(o.getAttribute('data-val')); } });
+        document.addEventListener('click', function(e){ if(!e.target.closest('.combo')) list.hidden = true; });
+    })();
+    </script>
 
     <script>
     (function () {
