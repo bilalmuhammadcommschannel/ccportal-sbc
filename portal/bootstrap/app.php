@@ -4,6 +4,7 @@ use App\Http\Middleware\AuditTrail;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\ForcePasswordChange;
 use App\Http\Middleware\SwitchAuth;
+use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -25,9 +26,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => EnsureRole::class,
         ]);
 
-        // Audit every state change, and force rotation of temporary passwords.
+        // AuthenticateSession ties each session to the user's password hash, so a
+        // password change/reset logs out every OTHER session (and remember cookie)
+        // on its next request. Audit every state change; force temp-password rotation.
         // Appended to the web group so they run after auth/session are available.
         $middleware->web(append: [
+            AuthenticateSession::class,
             ForcePasswordChange::class,
             AuditTrail::class,
         ]);

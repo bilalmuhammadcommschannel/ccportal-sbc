@@ -10,7 +10,7 @@ HIST=/var/lib/ccportal/stats-history.json
 CPUPREV=/var/lib/ccportal/.cpustat
 TMP=$(mktemp)
 
-json_escape(){ printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+json_escape(){ printf '%s' "$1" | tr -d '\000-\037\177' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 # --- fail2ban (per-jail counts + per-IP bans with ban time) ---
 jails_json=""
@@ -89,14 +89,20 @@ done
 
 # --- kamailio registrations (usrloc location table, db_mode write-through) ---
 reg_json=""; reg_ips=""
-while IFS=$'\t' read -r ruser rcontact rua rexp; do
+while IFS=$'\t' read -r ruser rcontact rrecv rua rexp; do
   [ -z "$ruser" ] && continue
+  # rsrc = the REAL registration source Kamailio recorded (location.received);
+  # rip = the client-supplied Contact host (display only — never trusted).
+  rsrc=$(printf '%s' "$rrecv" | sed -n 's#.*sip:\([0-9.]*\).*#\1#p')
   rip=$(printf '%s' "$rcontact" | sed -n 's#.*@\([^:;>]*\).*#\1#p')
   [ "$rua" = "NULL" ] && rua=""
-  case "$rip" in ''|*[!0-9.]*) ;; *) reg_ips="$reg_ips $rip";; esac   # collect IPv4 contact hosts
+  disp="${rsrc:-$rip}"
+  # SECURITY: only the REAL source IP is trusted for firewall/ACL — never the
+  # client-supplied Contact host (which an authenticated tenant can forge).
+  case "$rsrc" in ''|*[!0-9.]*) ;; *) reg_ips="$reg_ips $rsrc";; esac
   [ -n "$reg_json" ] && reg_json="$reg_json,"
-  reg_json="$reg_json{\"aor\":\"$(json_escape "$ruser")\",\"ip\":\"$(json_escape "$rip")\",\"ua\":\"$(json_escape "$rua")\",\"expires\":\"$(json_escape "$rexp")\"}"
-done < <(mysql kamailio -N -e "SELECT username,contact,COALESCE(user_agent,''),expires FROM location" 2>/dev/null)
+  reg_json="$reg_json{\"aor\":\"$(json_escape "$ruser")\",\"ip\":\"$(json_escape "$disp")\",\"ua\":\"$(json_escape "$rua")\",\"expires\":\"$(json_escape "$rexp")\"}"
+done < <(mysql kamailio -N -e "SELECT username,contact,COALESCE(received,''),COALESCE(user_agent,''),expires FROM location" 2>/dev/null)
 
 # --- STANDING RULE: every carrier IP + every registered-endpoint IP is auto-trusted ---
 # Carriers (carrier_ips, IPv4 IP-auth on an active carrier) and the IPs our
@@ -114,7 +120,9 @@ if command -v kamcmd >/dev/null 2>&1; then
   trusted=$(printf '%s\n' $carrier_ips $reg_ips | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)
   for ip in $trusted; do
     command -v nft >/dev/null 2>&1 && nft add element inet filter carrier_v4 "{ $ip }" >/dev/null 2>&1
-    for j in ccsip-auth ccsip-scanner ccportal-auth ccportal-probe sshd; do
+    # SIP data-plane jails ONLY — never sshd or the portal jails (a SIP source
+    # must not gain SSH/portal brute-force immunity).
+    for j in ccsip-auth ccsip-scanner; do
       fail2ban-client set "$j" addignoreip "$ip" >/dev/null 2>&1
       fail2ban-client set "$j" unbanip    "$ip" >/dev/null 2>&1
     done

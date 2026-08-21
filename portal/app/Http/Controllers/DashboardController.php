@@ -118,10 +118,11 @@ class DashboardController extends Controller
             'channels'     => data_get($s, 'freeswitch.channels', 0),
             // channel detail can name other tenants' calls — admin only
             'channel_list' => $isAdmin ? data_get($s, 'freeswitch.channel_list', []) : [],
-            'banned'       => data_get($s, 'fail2ban.currently_banned', 0),
-            'attacks'      => data_get($s, 'fail2ban.total_failed', 0),
-            'cpu'          => data_get($s, 'host.cpu_pct', 0),
-            'mem'          => data_get($s, 'host.mem_pct', 0),
+            // security posture + host metrics are admin-only (match the HTML view)
+            'banned'       => $isAdmin ? data_get($s, 'fail2ban.currently_banned', 0) : null,
+            'attacks'      => $isAdmin ? data_get($s, 'fail2ban.total_failed', 0) : null,
+            'cpu'          => $isAdmin ? data_get($s, 'host.cpu_pct', 0) : null,
+            'mem'          => $isAdmin ? data_get($s, 'host.mem_pct', 0) : null,
             'stale'        => $s['stale'] ?? false,
             'admin'        => $request->user()->isAdmin(),
         ]);

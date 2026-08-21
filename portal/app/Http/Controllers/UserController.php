@@ -120,7 +120,12 @@ class UserController extends Controller
         $temp = Str::password(16);
         $user->password = $temp;
         $user->must_change_password = true;
+        $user->setRememberToken(Str::random(60)); // invalidate any remember-me cookie
         $user->save();
+
+        // An admin reset is often a lockout of a compromised account — force the
+        // target off every device by dropping their existing DB sessions.
+        \Illuminate\Support\Facades\DB::table('sessions')->where('user_id', $user->id)->delete();
 
         Log::channel('auth')->warning("portal password reset for {$user->email} by {$request->user()->email} from {$request->ip()}");
 

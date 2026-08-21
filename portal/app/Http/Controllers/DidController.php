@@ -114,9 +114,11 @@ class DidController extends Controller
             ->orderBy('username')->get(['username', 'account_id'])
             ->groupBy('account_id')->map(fn ($g) => $g->pluck('username')->values())->toArray();
         // provider carriers (who delivers this DID's inbound calls) — used to
-        // attribute inbound CDRs to the right trunk.
-        $carriers = DB::connection('switch')->table('carrier')
-            ->orderBy('carrier_name')->get(['carrier_id', 'carrier_name', 'carrier_type']);
+        // attribute inbound CDRs to the right trunk. Carrier inventory is
+        // admin-only, so resellers get no list (and the field is hidden).
+        $carriers = $user->isAdmin()
+            ? DB::connection('switch')->table('carrier')->orderBy('carrier_name')->get(['carrier_id', 'carrier_name', 'carrier_type'])
+            : collect();
         // searchable account options showing the company name (grows over time)
         $custNames = DB::connection('switch')->table('customers')->pluck('company_name', 'account_id');
         $resNames  = DB::connection('switch')->table('resellers')->pluck('company_name', 'account_id');
@@ -165,7 +167,8 @@ class DidController extends Controller
             $did->channels    = $data['channels'];
             $did->did_name    = $data['did_name'] ?? $did->did_name;
             $did->did_status  = $data['did_status'];
-            if (array_key_exists('carrier_id', $data)) {
+            // carrier is a platform-global resource — only admins may set it
+            if ($request->user()->isAdmin() && array_key_exists('carrier_id', $data)) {
                 $did->carrier_id = $data['carrier_id'] ?: null;
             }
             if (array_key_exists('account_id', $data)) {

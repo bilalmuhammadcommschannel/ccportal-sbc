@@ -40,9 +40,13 @@ class PasswordController extends Controller
         $user->password = $data['password']; // hashed by the model cast
         $user->must_change_password = false;
         $user->password_changed_at = now();
+        $user->setRememberToken(\Illuminate\Support\Str::random(60)); // kill any outstanding remember-me cookie
         $user->save();
 
-        // Invalidate other sessions using the old credential.
+        // Actually revoke the old credential everywhere: logoutOtherDevices re-stamps
+        // the session password hash so AuthenticateSession logs out every OTHER
+        // session on its next request; regenerate() rotates the current session id.
+        \Illuminate\Support\Facades\Auth::logoutOtherDevices($data['password']);
         $request->session()->regenerate();
         Log::channel('auth')->info("portal password changed for {$user->email} from {$request->ip()}");
 

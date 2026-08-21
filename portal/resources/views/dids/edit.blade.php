@@ -18,11 +18,13 @@
             </div>
             <div class="grid">
                 <div class="field"><label>Channels</label><input type="number" name="channels" value="{{ old('channels',$did->channels) }}" min="1"></div>
+                @if(auth()->user()->isAdmin())
                 <div class="field"><label>Provider carrier <span class="muted">(who delivers inbound)</span></label>
                     <select name="carrier_id"><option value="">— none —</option>
                         @foreach($carriers as $cr)<option value="{{ $cr->carrier_id }}" @selected(old('carrier_id',$did->carrier_id)===$cr->carrier_id)>{{ $cr->carrier_name }} ({{ $cr->carrier_type }})</option>@endforeach
                     </select>
                 </div>
+                @endif
             </div>
             <div class="grid">
                 <div class="field"><label>Label</label><input name="did_name" value="{{ old('did_name',$did->did_name) }}"></div>
