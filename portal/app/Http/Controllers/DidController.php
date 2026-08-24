@@ -162,7 +162,7 @@ class DidController extends Controller
             $this->authorize('release', $did);
         }
 
-        DB::connection('switch')->transaction(function () use ($did, $data) {
+        DB::connection('switch')->transaction(function () use ($did, $data, $request) {
             $wasUnassigned = empty($did->account_id);
             $did->channels    = $data['channels'];
             $did->did_name    = $data['did_name'] ?? $did->did_name;
