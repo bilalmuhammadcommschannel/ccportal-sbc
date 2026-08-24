@@ -532,6 +532,10 @@ class SwitchController extends Controller
         $vars[] = '<action application="export" data="cc_call_key=' . $e($callKey) . '"/>';
         $vars[] = '<action application="export" data="cc_account_id=' . $e($accountId) . '"/>';
         $vars[] = '<action application="export" data="cc_direction=inbound"/>';
+        // Adaptive jitter buffer on both legs (export -> a-leg + bridged b-leg).
+        // The endpoint leg rides the public internet, so raw RTP without a jitter
+        // buffer plays out choppy under any network jitter. 60ms target, 200ms max.
+        $vars[] = '<action application="export" data="jitterbuffer_msec=60:200"/>';
         // the DID's provider carrier, so inbound CDRs attribute to the inbound trunk
         if ($carrierId !== '') {
             $vars[] = '<action application="export" data="cc_carrier_id=' . $e($carrierId) . '"/>';
@@ -619,6 +623,9 @@ XML;
         // describes the CHANNEL (a customer's outbound call is an "inbound" channel
         // to FS), so it must NOT be used to pick the ratecard.
         $vars[] = '<action application="export" data="cc_direction=outbound"/>';
+        // Adaptive jitter buffer on both legs — smooths choppy audio caused by
+        // network jitter on the internet-facing endpoint/carrier media path.
+        $vars[] = '<action application="export" data="jitterbuffer_msec=60:200"/>';
         // Call-level billing key. mod_xml_cdr posts one CDR PER LEG, each with its
         // own channel uuid — keying idempotency on the leg uuid would bill the same
         // call once per leg. Every leg of this call carries the same cc_call_key, so
