@@ -568,6 +568,122 @@ class SwitchController extends Controller
 XML;
     }
 
+    /**
+     * JSON routing decision for Kamailio (replaces FS's XML dialplan at cutover).
+     * Reuses the identical rating/routing helpers, so billing behaviour is unchanged.
+     * Called on the loopback :8080 endpoint (nginx injects the shared secret).
+     */
+    public function route(Request $request)
+    {
+        $direction   = strtolower((string) $request->input('direction', ''));
+        $destination = $this->digits((string) $request->input('destination', ''));
+        $callKey     = (string) ($request->input('call_key') ?: $request->input('call_id') ?: (string) \Illuminate\Support\Str::uuid());
+
+        if ($direction === 'inbound') {
+            return $this->routeInbound($destination, $callKey);
+        }
+
+        // --- outbound (customer -> carrier) ---
+        $endpoint = $this->resolveEndpoint((string) $request->input('auth_user', ''), (string) $request->input('src_ip', ''));
+        if (! $endpoint) {
+            return $this->deny('unknown endpoint');
+        }
+        if ((string) $endpoint->status !== '1') {
+            return $this->deny('endpoint disabled');
+        }
+        $account = DB::connection('switch')->table('account')->where('account_id', $endpoint->account_id)->first();
+        if (! $account || (string) $account->status_id !== '1') {
+            return $this->deny('account inactive');
+        }
+        if ($this->isBlockedDestination($destination)) {
+            \Illuminate\Support\Facades\Log::warning("switch route blocked high-risk {$destination} for {$endpoint->account_id}");
+            return $this->deny('destination blocked');
+        }
+        $prepaid = DB::connection('switch')->table('customers')->where('account_id', $endpoint->account_id)->value('billing_type') === 'prepaid';
+        [$ratecardId, $rateRow] = $this->peekRate($endpoint->account_id, $destination);
+        $maxSec = null;
+        if ($prepaid) {
+            if (! $rateRow) {
+                return $this->deny('no rate for destination');
+            }
+            $maxSec = $this->reserveCredit($endpoint->account_id, $callKey, $rateRow);
+            if ($maxSec === null) {
+                return $this->deny('insufficient balance');
+            }
+        }
+        $carrier = $this->selectCarrier($destination);
+        if (! $carrier) {
+            return $this->deny('no carrier');
+        }
+        $gw = $this->carrierGateway($carrier);
+        if (! $gw) {
+            return $this->deny('carrier has no endpoint');
+        }
+        $dialled = $this->applyDigitManip($carrier->carrier_id, $destination);
+        $headers = EndpointHeader::where('sip_username', $endpoint->username)
+            ->whereIn('direction', ['outbound', 'both'])->get()
+            ->map(fn ($h) => ['name' => $h->header_name, 'value' => $h->header_value])->values()->all();
+        $capSec = $maxSec !== null
+            ? min((int) $maxSec, (int) config('switch.max_call_seconds', 14400))
+            : (int) config('switch.default_max_call_seconds', 3600);
+
+        return response()->json([
+            'action'      => 'route',
+            'direction'   => 'outbound',
+            'ruri_user'   => $dialled,
+            'ruri_host'   => $gw->ipaddress,
+            'caller_id'   => (string) ($endpoint->caller_id ?: $endpoint->username),
+            'account_id'  => (string) $endpoint->account_id,
+            'carrier_id'  => (string) $carrier->carrier_id,
+            'ratecard_id' => (string) ($ratecardId ?? ''),
+            'max_sec'     => $capSec,
+            'sip_cc'      => max(1, (int) ($endpoint->sip_cc ?: 1)),
+            'account_cc'  => max(1, (int) ($account->account_cc ?? config('switch.default_account_cc', 2))),
+            'call_key'    => $callKey,
+            'headers'     => $headers,
+        ]);
+    }
+
+    /** Inbound (carrier -> DID -> registered endpoint) JSON decision. */
+    private function routeInbound(string $did, string $callKey)
+    {
+        $sw = DB::connection('switch');
+        $didRow = $sw->table('did')->where('did_number', $did)->first();
+        if (! $didRow || empty($didRow->account_id) || in_array((string) $didRow->did_status, ['DEAD', 'BLOCKED'], true)) {
+            return $this->deny("no active DID {$did}");
+        }
+        $account = $sw->table('account')->where('account_id', $didRow->account_id)->first();
+        if (! $account || (string) $account->status_id !== '1') {
+            return $this->deny('DID account inactive');
+        }
+        $dst = $sw->table('did_dst')->where('did_number', $did)->first();
+        if (! $dst || (string) $dst->dst_type !== 'CUSTOMER' || blank($dst->dst_destination)) {
+            return $this->deny('DID has no customer-endpoint route');
+        }
+        $ep = $sw->table('customer_sip_account')
+            ->where('username', $dst->dst_destination)->where('account_id', $didRow->account_id)->first();
+        if (! $ep || (string) $ep->status !== '1') {
+            return $this->deny('target endpoint unavailable');
+        }
+        return response()->json([
+            'action'     => 'route',
+            'direction'  => 'inbound',
+            'target_aor' => (string) $ep->username,   // Kamailio lookup("location") key
+            'ruri_user'  => $did,                     // present the DID to the endpoint (Yeastar routes on it)
+            'account_id' => (string) $didRow->account_id,
+            'carrier_id' => (string) ($didRow->carrier_id ?? ''),
+            'sip_cc'     => max(1, (int) ($ep->sip_cc ?: 1)),
+            'max_sec'    => (int) config('switch.default_max_call_seconds', 3600),
+            'call_key'   => $callKey,
+            'headers'    => [],
+        ]);
+    }
+
+    private function deny(string $cause)
+    {
+        return response()->json(['action' => 'reject', 'cause' => $cause]);
+    }
+
     private function reject(string $cause, string $note): string
     {
         $cause = htmlspecialchars($cause, ENT_QUOTES | ENT_XML1);
