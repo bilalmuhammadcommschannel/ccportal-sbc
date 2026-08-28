@@ -580,7 +580,7 @@ XML;
         $callKey     = (string) ($request->input('call_key') ?: $request->input('call_id') ?: (string) \Illuminate\Support\Str::uuid());
 
         if ($direction === 'inbound') {
-            return $this->routeInbound($destination, $callKey);
+            return $this->routeInbound($destination, $callKey, (string) $request->input('src_ip', ''));
         }
 
         // --- outbound (customer -> carrier) ---
@@ -645,7 +645,7 @@ XML;
     }
 
     /** Inbound (carrier -> DID -> registered endpoint) JSON decision. */
-    private function routeInbound(string $did, string $callKey)
+    private function routeInbound(string $did, string $callKey, string $srcIp = '')
     {
         $sw = DB::connection('switch');
         $didRow = $sw->table('did')->where('did_number', $did)->first();
@@ -665,13 +665,30 @@ XML;
         if (! $ep || (string) $ep->status !== '1') {
             return $this->deny('target endpoint unavailable');
         }
+        // Attribute the CDR to the carrier that ACTUALLY delivered the call: resolve
+        // it from the SIP source IP (the trusted carrier IP Kamailio accepted the
+        // INVITE from). Fall back to the DID's manually-configured provider carrier
+        // when the source IP matches no carrier_ips row (e.g. a new/edge IP).
+        $carrierId = '';
+        if ($srcIp !== '') {
+            $carrierId = (string) ($sw->table('carrier_ips as ci')
+                ->join('carrier as c', 'c.carrier_id', '=', 'ci.carrier_id')
+                ->where('ci.ipaddress', $srcIp)
+                ->where('ci.auth_type', 'IP')
+                ->where('c.carrier_status', '1')
+                ->value('ci.carrier_id') ?? '');
+        }
+        if ($carrierId === '') {
+            $carrierId = (string) ($didRow->carrier_id ?? '');
+        }
+
         return response()->json([
             'action'     => 'route',
             'direction'  => 'inbound',
             'target_aor' => (string) $ep->username,   // Kamailio lookup("location") key
             'ruri_user'  => $did,                     // present the DID to the endpoint (Yeastar routes on it)
             'account_id' => (string) $didRow->account_id,
-            'carrier_id' => (string) ($didRow->carrier_id ?? ''),
+            'carrier_id' => $carrierId,
             'sip_cc'     => max(1, (int) ($ep->sip_cc ?: 1)),
             'max_sec'    => (int) config('switch.default_max_call_seconds', 3600),
             'call_key'   => $callKey,

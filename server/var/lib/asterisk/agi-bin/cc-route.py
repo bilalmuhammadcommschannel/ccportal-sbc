@@ -46,10 +46,12 @@ src = getvar('cc_src')
 if direction != 'inbound':
     direction = 'outbound' if user else 'inbound'
 
-params = {'direction': direction, 'destination': dest, 'call_key': callid}
+# src_ip goes both ways: outbound uses it to resolve the endpoint; inbound uses
+# it to attribute the CDR to the carrier that actually delivered the call (the
+# X-CC-Src Kamailio stamped = the trusted carrier source IP).
+params = {'direction': direction, 'destination': dest, 'call_key': callid, 'src_ip': src}
 if direction == 'outbound':
     params['auth_user'] = user
-    params['src_ip'] = src
 
 url = 'http://127.0.0.1:8080/switch/route?' + urllib.parse.urlencode(params)
 try:
