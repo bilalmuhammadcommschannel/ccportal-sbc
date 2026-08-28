@@ -31,16 +31,23 @@
             </div>
         </div>
         <div class="card"><h2>Routing destination</h2>
-            <p class="muted" style="margin-top:-6px">For type <strong>CUSTOMER</strong>, the destination is one of the assigned account's SIP endpoints — start typing or pick from the list. For <strong>PSTN</strong> a number, for <strong>IP</strong> an <code>ip:port</code>.</p>
+            <p class="muted" style="margin-top:-6px">For type <strong>CUSTOMER</strong>, pick one of the assigned account's SIP endpoints from the dropdown. For <strong>PSTN</strong> enter a number, for <strong>IP</strong> an <code>ip:port</code>.</p>
             <div class="grid3">
-                <div class="field"><label>Primary type</label><select name="dst_type"><option value="">— none —</option>@foreach(['CUSTOMER','IP','PSTN'] as $t)<option value="{{ $t }}" @selected(old('dst_type',optional($did->destination)->dst_type)===$t)>{{ $t }}</option>@endforeach</select></div>
-                <div class="field" style="grid-column:span 2"><label>Primary destination</label><input name="dst_destination" list="epList" autocomplete="off" value="{{ old('dst_destination',optional($did->destination)->dst_destination) }}" placeholder="SIP endpoint (CUSTOMER), IP:port, or PSTN number"></div>
+                <div class="field"><label>Primary type</label><select name="dst_type" id="dstType1">@foreach(['','CUSTOMER','IP','PSTN'] as $t)<option value="{{ $t }}" @selected(old('dst_type',optional($did->destination)->dst_type)===$t)>{{ $t ?: '— none —' }}</option>@endforeach</select></div>
+                <div class="field" style="grid-column:span 2"><label>Primary destination</label>
+                    {{-- CUSTOMER -> real endpoint dropdown; IP/PSTN -> free text. Only the
+                         active one is enabled, so only it submits (dst_destination). --}}
+                    <select name="dst_destination" id="dstSel1" hidden disabled></select>
+                    <input  name="dst_destination" id="dstTxt1" autocomplete="off" value="{{ old('dst_destination',optional($did->destination)->dst_destination) }}" placeholder="IP:port or PSTN number">
+                </div>
             </div>
             <div class="grid3">
-                <div class="field"><label>Failover type</label><select name="dst_type2"><option value="">— none —</option>@foreach(['CUSTOMER','IP','PSTN'] as $t)<option value="{{ $t }}" @selected(old('dst_type2',optional($did->destination)->dst_type2)===$t)>{{ $t }}</option>@endforeach</select></div>
-                <div class="field" style="grid-column:span 2"><label>Failover destination</label><input name="dst_destination2" list="epList" autocomplete="off" value="{{ old('dst_destination2',optional($did->destination)->dst_destination2) }}"></div>
+                <div class="field"><label>Failover type</label><select name="dst_type2" id="dstType2">@foreach(['','CUSTOMER','IP','PSTN'] as $t)<option value="{{ $t }}" @selected(old('dst_type2',optional($did->destination)->dst_type2)===$t)>{{ $t ?: '— none —' }}</option>@endforeach</select></div>
+                <div class="field" style="grid-column:span 2"><label>Failover destination</label>
+                    <select name="dst_destination2" id="dstSel2" hidden disabled></select>
+                    <input  name="dst_destination2" id="dstTxt2" autocomplete="off" value="{{ old('dst_destination2',optional($did->destination)->dst_destination2) }}">
+                </div>
             </div>
-            <datalist id="epList"></datalist>
             <p class="muted" id="epHint" style="font-size:12px"></p>
         </div>
         <button class="btn" type="submit">Save</button>
@@ -90,19 +97,44 @@
     (function () {
         // account_id -> [sip usernames]
         var EP = @json($endpointsByAccount ?? new stdClass);
-        var sel = document.getElementById('acctSel');
-        var list = document.getElementById('epList');
+        var acctSel = document.getElementById('acctSel');
         var hint = document.getElementById('epHint');
-        function refresh() {
-            var acct = sel.value;
-            var eps = (acct && EP[acct]) ? EP[acct] : [];
-            list.innerHTML = eps.map(function (u) { return '<option value="' + u + '">'; }).join('');
-            if (!acct) { hint.textContent = ''; }
-            else if (eps.length) { hint.textContent = eps.length + ' endpoint(s) on ' + acct + ' — type CUSTOMER + pick one.'; }
-            else { hint.textContent = 'Account ' + acct + ' has no SIP endpoints yet — create one first, then route the DID to it.'; }
+        // saved destinations, so a CUSTOMER endpoint stays selected on load
+        var SAVED = {
+            1: @json(old('dst_destination',  optional($did->destination)->dst_destination)),
+            2: @json(old('dst_destination2', optional($did->destination)->dst_destination2))
+        };
+        function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+        function epsFor(){ var a=acctSel.value; return (a && EP[a]) ? EP[a] : []; }
+        // (re)build one destination <select> from the current account's endpoints,
+        // keeping the saved value selected (even if it is no longer an endpoint).
+        function fillSelect(i) {
+            var sel = document.getElementById('dstSel'+i);
+            var saved = SAVED[i] || '', eps = epsFor(), has = false;
+            var html = '<option value="">— select endpoint —</option>';
+            eps.forEach(function(u){ has = has || (u===saved); html += '<option value="'+esc(u)+'"'+(u===saved?' selected':'')+'>'+esc(u)+'</option>'; });
+            if (saved && !has) html += '<option value="'+esc(saved)+'" selected>'+esc(saved)+' (not a current endpoint)</option>';
+            sel.innerHTML = html;
         }
-        sel.addEventListener('change', refresh);
-        refresh();
+        // show the dropdown for CUSTOMER, the text box for IP/PSTN/none; disable the
+        // hidden one so exactly one field submits under each name.
+        function toggle(i) {
+            var isCust = document.getElementById('dstType'+i).value === 'CUSTOMER';
+            var sel = document.getElementById('dstSel'+i), txt = document.getElementById('dstTxt'+i);
+            sel.hidden = !isCust; sel.disabled = !isCust;
+            txt.hidden =  isCust; txt.disabled =  isCust;
+        }
+        function refreshHint() {
+            var a = acctSel.value, eps = epsFor();
+            if (!a) hint.textContent = '';
+            else if (eps.length) hint.textContent = eps.length + ' endpoint(s) on ' + a + ' — choose type CUSTOMER to pick one.';
+            else hint.textContent = 'Account ' + a + ' has no SIP endpoints yet — create one first, then route the DID to it.';
+        }
+        function refreshAll(){ fillSelect(1); fillSelect(2); toggle(1); toggle(2); refreshHint(); }
+        acctSel.addEventListener('change', refreshAll);   // fired by the account combobox on pick
+        document.getElementById('dstType1').addEventListener('change', function(){ toggle(1); });
+        document.getElementById('dstType2').addEventListener('change', function(){ toggle(2); });
+        refreshAll();
     })();
     </script>
 @endsection

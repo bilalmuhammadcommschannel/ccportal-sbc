@@ -32,7 +32,23 @@ class DidController extends Controller
             ->orderBy('did_number')
             ->paginate(30)->withQueryString();
 
-        return view('dids.index', compact('dids', 'q', 'status'));
+        // Resolve the assigned account_id -> display name for the DIDs on this page
+        // (customer name preferred, reseller name as fallback). Two bulk lookups,
+        // scoped to the visible account_ids, so no per-row query.
+        $acctIds = collect($dids->items())->pluck('account_id')->filter()->unique()->values();
+        if ($acctIds->isEmpty()) {
+            $assignedNames = collect();
+        } else {
+            $custNames = DB::connection('switch')->table('customers')
+                ->whereIn('account_id', $acctIds)->pluck('company_name', 'account_id');
+            $resNames = DB::connection('switch')->table('resellers')
+                ->whereIn('account_id', $acctIds)->pluck('company_name', 'account_id');
+            $assignedNames = $acctIds->mapWithKeys(fn ($id) => [
+                $id => ($custNames[$id] ?? $resNames[$id] ?? null),
+            ]);
+        }
+
+        return view('dids.index', compact('dids', 'q', 'status', 'assignedNames'));
     }
 
     public function create()

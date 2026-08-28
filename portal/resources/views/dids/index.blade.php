@@ -16,7 +16,12 @@
                     <td><a href="{{ route('dids.show',$d) }}">{{ $d->did_number }}</a></td>
                     <td>{{ $d->number_type }}</td>
                     <td>@if($d->did_status==='USED')<span class="pill on">USED</span>@elseif($d->did_status==='NEW')<span class="pill off">NEW</span>@else<span class="pill off">{{ $d->did_status }}</span>@endif</td>
-                    <td>{{ $d->account_id ?? '—' }}</td>
+                    <td>
+                        @if($d->account_id)
+                            @php($nm = $assignedNames[$d->account_id] ?? null)
+                            @if($nm){{ $nm }}<br><span class="muted" style="font-size:12px">{{ $d->account_id }}</span>@else{{ $d->account_id }}@endif
+                        @else—@endif
+                    </td>
                     <td>{{ $d->channels }}</td>
                     <td class="right"><a class="btn ghost sm" href="{{ route('dids.edit',$d) }}">Assign / edit</a></td>
                 </tr>
