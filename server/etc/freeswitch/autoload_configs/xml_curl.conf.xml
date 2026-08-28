@@ -1,8 +1,0 @@
-<configuration name="xml_curl.conf" description="cURL XML Gateway">
-  <bindings>
-    <binding name="dialplan">
-      <param name="gateway-url" value="http://127.0.0.1:8080/switch/dialplan" bindings="dialplan"/>
-      <param name="method" value="POST"/>
-    </binding>
-  </bindings>
-</configuration>

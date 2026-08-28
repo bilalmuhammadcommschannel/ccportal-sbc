@@ -1,9 +1,8 @@
 #!/bin/bash
-ESLPW=$(grep -oE 'value="[a-f0-9]{40}"' /etc/freeswitch/autoload_configs/event_socket.conf.xml 2>/dev/null | grep -oE '[a-f0-9]{40}' | head -1)
 # Collects operational + security stats as ROOT and writes a JSON snapshot the
 # portal (www-data) can read. Deliberate design: the web process never gets
-# fail2ban/fs_cli privileges — it only reads a file. (Unblock-from-UI goes the
-# other way, through the narrowly-scoped setuid helper /usr/local/sbin/cc-fw.)
+# fail2ban / asterisk-CLI privileges — it only reads a file. (Unblock-from-UI
+# goes the other way, through the narrowly-scoped setuid helper /usr/local/sbin/cc-fw.)
 set -u
 OUT=/var/lib/ccportal/stats.json
 HIST=/var/lib/ccportal/stats-history.json
@@ -39,49 +38,44 @@ for j in $(fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:\s*//p' | 
   done < <(fail2ban-client get "$j" banip --with-time 2>/dev/null)
 done
 
-# --- freeswitch live calls ---
-fs_up=0; fs_calls=0; fs_channels=0; fs_chan_json="[]"
-if systemctl is-active --quiet freeswitch; then
-  fs_up=1
-  fs_calls=$(fs_cli -p "$ESLPW" -x "show calls count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
-  fs_channels=$(fs_cli -p "$ESLPW" -x "show channels count" 2>/dev/null | grep -oE '^[0-9]+' | head -1)
-  fs_calls=${fs_calls:-0}; fs_channels=${fs_channels:-0}
-  # per-channel detail. `show channels as delim |` columns (1-indexed):
-  #  1 uuid | 2 direction | 5 name | 8 cid_num | 10 dest | 18 write_codec
-  #  25 accountcode (we set it = account_id) | 26 callstate
-  # Emit one \034-delimited record per channel, then enrich each with the
-  # call-level vars (cc_direction/cc_carrier_id) and a human trunk name. The
-  # raw sofia/... channel name is NEVER exposed to the portal.
-  chans=$(fs_cli -p "$ESLPW" -x "show channels as delim |" 2>/dev/null | awk -F'|' '
-    NR>1 && NF>25 { gsub(/"/,"",$0);
-      printf "%s\034%s\034%s\034%s\034%s\034%s\034%s\034%s\n",$1,$2,$5,$8,$10,$18,$25,$26 }')
+# --- asterisk (chan_sip media anchor) live calls ---
+# JSON key stays "switch" (media-stack-agnostic) so the portal never cares which
+# B2BUA is behind it. Aggregate counts come from `core show channels count`;
+# per-channel detail is read from each channel's own variables (CC_DIR / CC_DEST
+# / CC_ACCOUNT / CC_CARRIER, set by the AGI in extensions.conf). The raw channel
+# name (SIP/kamailio-XXXX) is NEVER exposed to the portal.
+sw_up=0; sw_calls=0; sw_channels=0; sw_chan_json="[]"
+if systemctl is-active --quiet asterisk; then
+  sw_up=1
+  cnt=$(asterisk -rx "core show channels count" 2>/dev/null)
+  sw_channels=$(printf '%s\n' "$cnt" | awk '/active channels/{print $1; exit}')
+  sw_calls=$(printf '%s\n'    "$cnt" | awk '/active calls/{print $1; exit}')
+  sw_channels=${sw_channels:-0}; sw_calls=${sw_calls:-0}
+  # channel names, one per line (concise output is !-delimited; field 1 = name)
+  names=$(asterisk -rx "core show channels concise" 2>/dev/null | awk -F'!' 'NF>1{print $1}')
   chan_json=""; count=0
-  while IFS=$'\034' read -r uuid legdir name cid dest codec acct state; do
-    [ -z "$uuid" ] && continue
-    count=$((count+1))
-    ccdir=""; cccar=""
-    if [ "$count" -le 60 ]; then   # bound per-channel fs_cli calls under load
-      ccdir=$(fs_cli -p "$ESLPW" -x "uuid_getvar $uuid cc_direction" 2>/dev/null | tr -d '\r\n')
-      cccar=$(fs_cli -p "$ESLPW" -x "uuid_getvar $uuid cc_carrier_id" 2>/dev/null | tr -d '\r\n')
-    fi
-    [ "$ccdir" = "_undef_" ] && ccdir=""
-    [ "$cccar" = "_undef_" ] && cccar=""
-    # trunk host from the channel name (sofia/PROFILE/USER@HOST); internal = endpoint
-    profile=$(printf '%s' "$name" | cut -d/ -f2)
-    host=$(printf '%s' "$name" | sed -n 's#.*@##p' | sed 's/[:;].*//')
-    trunk=""
-    [ "$profile" = "external" ] && trunk="$host"
-    [ "$profile" = "internal" ] && trunk="endpoint"
-    dir="$ccdir"; [ -z "$dir" ] && dir="$legdir"
+  while IFS= read -r ch; do
+    [ -z "$ch" ] && continue
+    count=$((count+1)); [ "$count" -gt 60 ] && break   # bound per-channel calls under load
+    info=$(asterisk -rx "core show channel $ch" 2>/dev/null)
+    # channel variables print flush-left as NAME=value in the "Variables:" section
+    gv(){ printf '%s\n' "$info" | sed -n "s/^[[:space:]]*$1=//p" | head -1 | tr -d '\r'; }
+    ccdir=$(gv CC_DIR); cccar=$(gv CC_CARRIER); ccact=$(gv CC_ACCOUNT); dest=$(gv CC_DEST)
+    # only the anchor's inbound-from-Kamailio leg carries the CC_ vars; skip the
+    # far (carrier/endpoint) leg so each call shows as one row, not two.
+    [ -z "$ccdir" ] && continue
+    uuid=$(gv CC_CALLKEY)              # billing call id (safe); NOT the channel name
+    state=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*State:[[:space:]]*//p' | head -1 | tr -d '\r')
+    trunk=""; [ "$ccdir" = "inbound" ] && trunk="endpoint"
     [ -n "$chan_json" ] && chan_json="$chan_json,"
-    chan_json="$chan_json{\"uuid\":\"$(json_escape "$uuid")\",\"direction\":\"$(json_escape "$dir")\",\"account\":\"$(json_escape "$acct")\",\"carrier_id\":\"$(json_escape "$cccar")\",\"trunk\":\"$(json_escape "$trunk")\",\"cid\":\"$(json_escape "$cid")\",\"dest\":\"$(json_escape "$dest")\",\"codec\":\"$(json_escape "$codec")\",\"state\":\"$(json_escape "$state")\"}"
-  done <<< "$chans"
-  [ -n "$chan_json" ] && fs_chan_json="[$chan_json]"
+    chan_json="$chan_json{\"uuid\":\"$(json_escape "$uuid")\",\"direction\":\"$(json_escape "$ccdir")\",\"account\":\"$(json_escape "$ccact")\",\"carrier_id\":\"$(json_escape "$cccar")\",\"trunk\":\"$(json_escape "$trunk")\",\"cid\":\"\",\"dest\":\"$(json_escape "$dest")\",\"codec\":\"\",\"state\":\"$(json_escape "$state")\"}"
+  done <<< "$names"
+  [ -n "$chan_json" ] && sw_chan_json="[$chan_json]"
 fi
 
 # --- services ---
 svc_json=""
-for s in nginx php8.3-fpm mariadb fail2ban freeswitch kamailio nftables ccportal-scheduler.timer certbot.timer; do
+for s in nginx php8.3-fpm mariadb fail2ban asterisk kamailio nftables ccportal-scheduler.timer certbot.timer; do
   st=$(systemctl is-active "$s" 2>/dev/null || echo unknown)
   [ -n "$svc_json" ] && svc_json="$svc_json,"
   svc_json="$svc_json{\"name\":\"$(json_escape "$s")\",\"state\":\"$(json_escape "$st")\"}"
@@ -155,7 +149,7 @@ cat > "$TMP" <<JSON
 {
   "generated_at": "$(date -u '+%Y-%m-%d %H:%M:%S')",
   "fail2ban": { "jails": [$jails_json], "bans": [$bans_json], "currently_banned": $cur_banned, "total_banned": $tot_banned, "total_failed": $tot_failed },
-  "freeswitch": { "up": $fs_up, "calls": $fs_calls, "channels": $fs_channels, "channel_list": $fs_chan_json },
+  "switch": { "up": $sw_up, "calls": $sw_calls, "channels": $sw_channels, "channel_list": $sw_chan_json },
   "services": [$svc_json],
   "registrations": [$reg_json],
   "host": { "load": "$load", "cpu_pct": $cpu_pct, "mem_pct": $mem_pct, "mem_total_mb": $memtot, "mem_available_mb": $memav, "disk_used_pct": ${disk:-0}, "uptime_sec": $up }
@@ -164,7 +158,7 @@ JSON
 chmod 644 "$TMP" && mv "$TMP" "$OUT"
 
 # --- rolling history ring buffer for CPU/RAM/live-call sparklines (keep ~2h @ 20s = 360) ---
-python3 - "$HIST" "$cpu_pct" "$mem_pct" "$fs_calls" <<'PY' 2>/dev/null || true
+python3 - "$HIST" "$cpu_pct" "$mem_pct" "$sw_calls" <<'PY' 2>/dev/null || true
 import json, sys, os, time
 path, cpu, mem, calls = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 hist = []

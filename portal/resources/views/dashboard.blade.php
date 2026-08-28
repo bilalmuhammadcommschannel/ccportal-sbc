@@ -11,7 +11,7 @@
         'ccsip-scanner' => '#2E7BC4', 'ccsip-auth' => '#59a6e0',
         'ccportal-probe' => '#b57500', 'ccportal-auth' => '#7c5cc4', 'sshd' => '#64748b',
     ];
-    $liveCalls = (int) data_get($stats, 'freeswitch.calls', 0);
+    $liveCalls = (int) data_get($stats, 'switch.calls', 0);
     $cpu = (int) data_get($stats, 'host.cpu_pct', 0);
     $mem = (int) data_get($stats, 'host.mem_pct', 0);
     $cpuHist = array_map(fn ($s) => (int) ($s['cpu'] ?? 0), $history);
@@ -35,8 +35,8 @@
             <span class="go">→</span>
             <div class="k-label">Live calls</div>
             <div class="k-val">@if($liveCalls>0)<span class="live-dot"></span>@endif<span id="t-calls">{{ $liveCalls }}</span></div>
-            <div class="k-sub"><span id="t-chans">{{ data_get($stats,'freeswitch.channels',0) }}</span> channels
-                @if(!data_get($stats,'freeswitch.up'))· <span class="pill off">switch down</span>@endif</div>
+            <div class="k-sub"><span id="t-chans">{{ data_get($stats,'switch.channels',0) }}</span> channels
+                @if(!data_get($stats,'switch.up'))· <span class="pill off">switch down</span>@endif</div>
         </a>
 
         <a class="kpi" href="{{ route('cdrs.index') }}">
@@ -112,7 +112,7 @@
             <table id="live-table">
                 <thead><tr><th>Account</th><th>Trunk</th><th>Caller ID</th><th>Destination</th><th>Direction</th><th>Codec</th></tr></thead>
                 <tbody>
-                @forelse(data_get($stats,'freeswitch.channel_list',[]) as $c)
+                @forelse(data_get($stats,'switch.channel_list',[]) as $c)
                     @php $dir = $c['direction'] ?? ''; @endphp
                     <tr>
                         <td>{{ $c['account_label'] ?? '—' }}</td>

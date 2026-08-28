@@ -4,11 +4,14 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/REPO_SLUG/main/install.sh | sudo bash
 #
-# Installs & wires: Kamailio 6.0 (public SIP edge) + FreeSWITCH 1.11 (media) +
-# Laravel portal (nginx + PHP 8.3 + MariaDB) + fail2ban + nftables + TLS.
-# Prompts for: domain, Let's Encrypt email, SignalWire token (FreeSWITCH repo).
-# Every DB password / shared secret / ESL password / admin password is generated
-# fresh on this machine and never leaves it.
+# Installs & wires: Kamailio 6.0 (public SIP edge) + Asterisk 18 chan_sip
+# (loopback media anchor, built from source) + Laravel portal (nginx + PHP 8.3 +
+# MariaDB) + fail2ban + nftables + TLS. The media anchor re-frames RTP to a
+# constant 20ms ptime, which fixes choppy audio from PBXes that emit mixed
+# 20/40ms G.711 (e.g. Yeastar IVR/MoH) — see docs/MEDIA-ANCHOR.md for why.
+# Prompts for: domain, Let's Encrypt email.
+# Every DB password / shared secret / admin password is generated fresh on this
+# machine and never leaves it.
 #
 set -euo pipefail
 
@@ -28,11 +31,10 @@ die() { c "1;31" "FATAL: $*"; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root (use sudo)."
 
 # ---------------------------------------------------------------- inputs (asked up front)
-DOMAIN="${DOMAIN:-}"; LE_EMAIL="${LE_EMAIL:-}"; SIGNALWIRE_TOKEN="${SIGNALWIRE_TOKEN:-}"; OPEN_SIP="${OPEN_SIP:-}"
+DOMAIN="${DOMAIN:-}"; LE_EMAIL="${LE_EMAIL:-}"; OPEN_SIP="${OPEN_SIP:-}"
 while [ $# -gt 0 ]; do case "$1" in
     --domain) DOMAIN="$2"; shift 2;;
     --email) LE_EMAIL="$2"; shift 2;;
-    --signalwire-token) SIGNALWIRE_TOKEN="$2"; shift 2;;
     --open-sip) OPEN_SIP=yes; shift;;
     *) shift;;
 esac; done
@@ -52,11 +54,9 @@ asksec() { local p="$1" v; read -rsp "$p: " v </dev/tty || true; echo >/dev/tty;
 # Prompt for anything still unknown, BEFORE cloning, so the re-exec never re-asks.
 [ -n "$DOMAIN" ]           || DOMAIN="$(ask 'SIP + portal domain (e.g. sbc.example.com)')"
 [ -n "$LE_EMAIL" ]         || LE_EMAIL="$(ask 'Email for Lets Encrypt / expiry notices')"
-[ -n "$SIGNALWIRE_TOKEN" ] || SIGNALWIRE_TOKEN="$(asksec 'SignalWire access token (free from signalwire.com; for the FreeSWITCH repo)')"
 if [ -z "$OPEN_SIP" ]; then a="$(ask 'Open SIP (5060/5061/RTP) to the public internet now? y/N' 'N')"; [ "${a,,}" = y ] && OPEN_SIP=yes || OPEN_SIP=no; fi
 [ -n "$DOMAIN" ] || die "domain is required."
-[ -n "$SIGNALWIRE_TOKEN" ] || die "SignalWire token is required for FreeSWITCH."
-export DOMAIN LE_EMAIL SIGNALWIRE_TOKEN OPEN_SIP
+export DOMAIN LE_EMAIL OPEN_SIP
 
 # ---------------------------------------------------------------- self-bootstrap
 # First run is usually just this one file (fetched via `curl -O`); the rest of
@@ -135,34 +135,39 @@ addsrc php.list "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packag
 # Kamailio 6.0
 install_key http://deb.kamailio.org/kamailiodebkey.gpg /usr/share/keyrings/kamailio-archive.gpg || die "could not fetch the Kamailio signing key"
 addsrc kamailio.list "deb [signed-by=/usr/share/keyrings/kamailio-archive.gpg] http://deb.kamailio.org/kamailio60 trixie main"
-# FreeSWITCH (SignalWire, token-gated)
-install_key https://freeswitch.signalwire.com/repo/deb/debian-release/signalwire-freeswitch-repo.gpg /usr/share/keyrings/signalwire-freeswitch-repo.gpg --user "signalwire:${SIGNALWIRE_TOKEN}" \
-    || die "SignalWire token rejected — check it at signalwire.com."
-# auth.conf carries the token: stays root-only 0600 (read by apt as root, not _apt)
-echo "machine freeswitch.signalwire.com login signalwire password ${SIGNALWIRE_TOKEN}" > /etc/apt/auth.conf.d/freeswitch.conf
-chmod 600 /etc/apt/auth.conf.d/freeswitch.conf
-addsrc freeswitch.list "deb [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ trixie main"
+# Asterisk is NOT installed from apt — Debian's package is chan_pjsip-only and
+# does not ship the chan_sip we depend on for RTP re-framing. It is built from
+# source below (scripts/build-asterisk-chansip.sh). No third-party repo needed.
 
 step "updating apt indexes"
 apt-get update || die "apt-get update failed — check the repository errors above."
-step "installing packages — FreeSWITCH is large, this can take several minutes (progress shown below)"
-# NOTE: not silenced on purpose — the operator sees the download/unpack progress
-# so a long FreeSWITCH pull doesn't look like a hang.
+step "installing packages"
 apt-get install -y \
     nginx mariadb-server \
     php8.3-fpm php8.3-cli php8.3-mysql php8.3-mbstring php8.3-xml php8.3-curl php8.3-bcmath php8.3-zip php8.3-intl php8.3-gd \
     kamailio kamailio-mysql-modules kamailio-tls-modules \
-    freeswitch-meta-all freeswitch-conf-vanilla \
+    python3 \
     certbot fail2ban nftables composer jq || die "package install failed — see apt output above."
-# our FreeSWITCH overlay references vanilla macros ($${domain}, loopback.auto, etc.) —
-# the base config must be present or FreeSWITCH won't parse its XML at all.
-[ -f /etc/freeswitch/freeswitch.xml ] && [ -f /etc/freeswitch/vars.xml ] || die "FreeSWITCH base config (freeswitch-config-vanilla) missing"
 # fail loudly if anything critical is missing rather than limping on
-for bin in nginx mariadbd php8.3 kamailio freeswitch composer; do
+for bin in nginx mariadbd php8.3 kamailio composer; do
     command -v "$bin" >/dev/null 2>&1 || [ -x "/usr/sbin/$bin" ] || dpkg -s "${bin%%[0-9]*}" >/dev/null 2>&1 \
         || warn "expected component '$bin' not found on PATH — check its package"
 done
 ok "packages installed"
+
+# ---------------------------------------------------------------- media anchor (Asterisk 18 / chan_sip)
+# Built from source: Debian's asterisk package is chan_pjsip-only, and chan_pjsip
+# does native RTP passthrough (preserves the far end's bad ptime -> choppy audio).
+# chan_sip terminates + re-frames to a constant 20ms, which is the fix. This lays
+# down the binary, base sample configs, and the systemd unit; our own sip.conf /
+# rtp.conf / extensions.conf / modules.conf are overlaid in the config-copy step.
+step "building Asterisk 18 media anchor (from source — first build takes several minutes)"
+if [ -x /usr/sbin/asterisk ] && /usr/sbin/asterisk -V 2>/dev/null | grep -q 'Asterisk 18' \
+   && [ -f /usr/lib/asterisk/modules/chan_sip.so ]; then
+    ok "Asterisk 18 + chan_sip already built — skipping"
+else
+    bash "$REPO/scripts/build-asterisk-chansip.sh" || die "Asterisk build failed — see output above"
+fi
 
 # ---------------------------------------------------------------- databases
 step "creating databases + users"
@@ -281,14 +286,13 @@ ok "portal deployed"
 
 # ---------------------------------------------------------------- server configs
 step "installing server configs"
-# freeswitch user (package usually creates it; ensure it exists to avoid chown failures)
-id freeswitch >/dev/null 2>&1 || useradd -r -s /usr/sbin/nologin freeswitch || true
 copy_render() { install -D -m "${3:-0644}" /dev/null "$2"; render < "$1" > "$2"; }
 while IFS= read -r -d '' f; do
     rel="${f#"$REPO"/server}"; dest="$rel"
     case "$rel" in
         /etc/nftables.conf) continue;;                    # handled below (open-sip toggle)
         /usr/local/sbin/*) copy_render "$f" "$dest" 0755;;
+        /var/lib/asterisk/agi-bin/*) copy_render "$f" "$dest" 0755;;  # AGI scripts must be executable
         /etc/sudoers.d/*)                                 # sudo rejects bad/loose perms — 0440 + validate
             copy_render "$f" "$dest" 0440
             visudo -cf "$dest" >/dev/null 2>&1 || { rm -f "$dest"; die "sudoers $dest failed validation"; };;
@@ -304,19 +308,13 @@ ln -sf /etc/nginx/sites-available/ccportal-switch.conf /etc/nginx/sites-enabled/
 # --- dashboard stats output dir (H4: cc-collect-stats mv target) ---
 install -d -m 0755 /var/lib/ccportal
 
-# --- FreeSWITCH profile/dialplan hygiene ---
-# Drop the IPv6 profiles (they bind [::]:5060/[::]:5080 -> collide with Kamailio /
-# expose a second edge). KEEP external.xml: FreeSWITCH needs it to bridge OUT to
-# carriers (sofia/external/...), and inbound 5080 is firewalled (H2, corrected).
-rm -f /etc/freeswitch/sip_profiles/internal-ipv6.xml /etc/freeswitch/sip_profiles/external-ipv6.xml
-# Remove vanilla sample dialplans so a portal/xml_curl outage cannot fall through
-# to echo/voicemail/conference; our safe default.xml (shipped above) stays (M1).
-rm -rf /etc/freeswitch/dialplan/default /etc/freeswitch/dialplan/public /etc/freeswitch/dialplan/skinny-patterns
-# Set our codec list in the vanilla vars.xml (B3-codec).
-if [ -f /etc/freeswitch/vars.xml ]; then
-    sed -i -E 's|(global_codec_prefs=)[^"]*|\1PCMU,PCMA,OPUS,G722,G729,GSM|; s|(outbound_codec_prefs=)[^"]*|\1PCMU,PCMA,OPUS,G722,G729,GSM|' /etc/freeswitch/vars.xml
-fi
-chown -R freeswitch:freeswitch /etc/freeswitch 2>/dev/null || true
+# --- Asterisk media-anchor hygiene ---
+# The config-copy step above overlaid our sip.conf / rtp.conf / extensions.conf /
+# modules.conf onto the `make samples` defaults. modules.conf forces chan_sip on
+# and PJSIP off, so Asterisk owns UDP 5065 for the loopback anchor leg. AGI dir +
+# spool must exist and be owned by the runtime user (root, per the systemd unit).
+install -d -o root -g root /var/lib/asterisk/agi-bin /var/spool/asterisk /var/log/asterisk
+chmod 0755 /var/lib/asterisk/agi-bin/cc-route.py /var/lib/asterisk/agi-bin/cc-cdr.py 2>/dev/null || true
 
 # nftables: render + inject public-SIP block on opt-in
 PUBLIC_BLOCK="        # (public SIP not enabled — add carrier/admin IPs to the nft sets, or re-run with --open-sip)"
@@ -328,7 +326,7 @@ PUBLIC_BLOCK=$(cat <<'NFT'
         tcp dport { 5060, 5061 } ct state new meter cc_sip_cnt4 { ip saddr ct count over 40 } drop
         tcp dport 5060 accept comment "public SIP tcp"
         tcp dport 5061 accept comment "public SIP tls"
-        udp dport 16384-32768 accept comment "RTP media - public"
+        udp dport 20000-60000 accept comment "RTP media - public"
 NFT
 )
 fi
@@ -394,7 +392,7 @@ chmod +x /etc/letsencrypt/renewal-hooks/deploy/20-cc-reload.sh
 step "enabling services"
 systemctl daemon-reload    # pick up the timer/service units the copy loop just installed
 systemctl enable --now php8.3-fpm nginx fail2ban nftables >/dev/null 2>&1 || true
-for svc in kamailio freeswitch; do systemctl enable "$svc" >/dev/null 2>&1 || true; systemctl restart "$svc" >/dev/null 2>&1 || warn "$svc did not start — check: journalctl -u $svc"; done
+for svc in kamailio asterisk; do systemctl enable "$svc" >/dev/null 2>&1 || true; systemctl restart "$svc" >/dev/null 2>&1 || warn "$svc did not start — check: journalctl -u $svc"; done
 for t in ccportal-scheduler.timer cc-stats.timer; do systemctl enable --now "$t" >/dev/null 2>&1 || warn "$t did not enable — check: systemctl status $t"; done
 systemctl reload nginx 2>/dev/null || systemctl restart nginx || true
 

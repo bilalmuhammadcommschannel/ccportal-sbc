@@ -114,10 +114,10 @@ class DashboardController extends Controller
         $isAdmin = $request->user()->isAdmin();
         return response()->json([
             'generated_at' => $s['generated_at'] ?? null,
-            'calls'        => data_get($s, 'freeswitch.calls', 0),
-            'channels'     => data_get($s, 'freeswitch.channels', 0),
+            'calls'        => data_get($s, 'switch.calls', 0),
+            'channels'     => data_get($s, 'switch.channels', 0),
             // channel detail can name other tenants' calls — admin only
-            'channel_list' => $isAdmin ? data_get($s, 'freeswitch.channel_list', []) : [],
+            'channel_list' => $isAdmin ? data_get($s, 'switch.channel_list', []) : [],
             // security posture + host metrics are admin-only (match the HTML view)
             'banned'       => $isAdmin ? data_get($s, 'fail2ban.currently_banned', 0) : null,
             'attacks'      => $isAdmin ? data_get($s, 'fail2ban.total_failed', 0) : null,
@@ -146,7 +146,7 @@ class DashboardController extends Controller
      */
     private function enrichChannels(array $data): array
     {
-        $list = data_get($data, 'freeswitch.channel_list', []);
+        $list = data_get($data, 'switch.channel_list', []);
         if (empty($list)) {
             return $data;
         }
@@ -168,7 +168,7 @@ class DashboardController extends Controller
             $c['dest'] = rawurldecode((string) ($c['dest'] ?? ''));
         }
         unset($c);
-        $data['freeswitch']['channel_list'] = $list;
+        $data['switch']['channel_list'] = $list;
         return $data;
     }
 
